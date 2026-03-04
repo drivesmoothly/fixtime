@@ -104,7 +104,7 @@ def format_duration(seconds):
 def main():
     script_start_time = time.time()
 
-    parser = argparse.ArgumentParser(description="Shift EXIF capture time with GPX-ready Orphan Memory and Atomic Sync.")
+    parser = argparse.ArgumentParser(description="Shift EXIF capture time with GPX-ready Orphan Memory, Atomic Sync, and Forensic Backups.")
     parser.add_argument("directory", help="Path to the folder containing your CR3 or JPG files")
     parser.add_argument("--dry-run", action="store_true", help="Run the math without modifying files")
     args = parser.parse_args()
@@ -252,8 +252,16 @@ def main():
             f"-OffsetTimeDigitized={global_offset}"
         ]
 
+        # The Forensic Backup: Identify the source of the coordinates
+        if has_gps:
+            update_cmd.append("-XMP-tzshifter:LocationSource=Camera")
+        else:
+            update_cmd.append("-XMP-tzshifter:LocationSource=Orphan")
+
         if total_shift_sec != 0:
             print(f"  ACTION: Shift clock by {shift_str} & Tag {global_offset}")
+            # The Forensic Backup: Copy the original time BEFORE the shift happens
+            update_cmd.append("-XMP-tzshifter:OriginalCameraTime<DateTimeOriginal")
             update_cmd.append(f"-AllDates{shift_str}")
         else:
             print(f"  ACTION: Clock drift is 0. Tagging offset {global_offset} only.")
