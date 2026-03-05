@@ -105,6 +105,7 @@ def format_duration(seconds):
     return f"{minutes}m {sec:.2f}s"
 
 def main():
+    sys.stdout.reconfigure(line_buffering=True)
     script_start_time = time.time()
 
     parser = argparse.ArgumentParser(description="Shift EXIF capture time with GPX-ready Orphan Memory, Atomic Sync, and Forensic Backups.")
@@ -121,6 +122,14 @@ def main():
     if not os.path.isdir(target_dir):
         print(f"ERROR: Directory '{target_dir}' does not exist.")
         sys.exit(1)
+
+    # --- NEW AUDIT LOGGING BLOCK ---
+    print("\n==================================================")
+    print(" fixtime - Forensic Time Alignment")
+    print("==================================================")
+    print(f" 📂 Target Folder : {target_dir}")
+    print(f" 💻 Command       : {' '.join(sys.argv)}")
+    print("==================================================\n")
 
     print(f"Initializing Timezone database... (DRY_RUN is {'ON' if args.dry_run else 'OFF'})")
     tf = TimezoneFinder()

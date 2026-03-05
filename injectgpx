@@ -30,11 +30,18 @@ if [ ! -d "$DIRECTORY" ]; then
     exit 1
 fi
 
+# Capture the exact command typed by the user
+COMMAND_LINE="$0 $@"
+
+echo ""
 echo "=================================================="
-echo " Starting GPX Injection"
-echo " Track:   $GPX_FILE"
-echo " Target:  $DIRECTORY"
+echo " injectgpx - Forensic GPX Interpolation"
 echo "=================================================="
+echo " 📂 Target Folder : $DIRECTORY"
+echo " 🗺️  GPX Track     : $GPX_FILE"
+echo " 💻 Command       : $COMMAND_LINE"
+echo "=================================================="
+echo ""
 
 # Command Breakdown:
 # -if 'not $GPSLatitude'          : Safety bouncer. Ignores files that already have GPS data.
