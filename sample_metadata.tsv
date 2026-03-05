@@ -1,0 +1,716 @@
+AE Lock Meter Mode After Focus	Evaluative
+AE Microadjustment	Disable; 0; 8; 0
+AE Setting	AE Lock
+AE Setting	AE Lock
+AEB Auto Cancel	Off
+AEB Bracket Value	0
+AEB Bracket Value	0
+AEB Sequence	0,-,+
+AEB Shot Count	Unknown (5 0)
+AF Accel/Decel Tracking	2147483647
+AF Area Heights	(2,107 bytes binary data)
+AF Area Heights	(2,107 bytes binary data)
+AF Area Mode	Spot AF
+AF Area Mode	Spot AF
+AF Area Select Method	Main dial
+AF Area Selection Method	Main Dial
+AF Area Widths	(2,107 bytes binary data)
+AF Area Widths	(2,107 bytes binary data)
+AF Area X Positions	(2,105 bytes binary data)
+AF Area X Positions	(2,105 bytes binary data)
+AF Area Y Positions	(2,107 bytes binary data)
+AF Area Y Positions	(2,107 bytes binary data)
+AF Assist Beam	Disable
+AF Config Tool	Case 2147483648
+AF Image Height	5464
+AF Image Height	5464
+AF Image Width	8192
+AF Image Width	8192
+AF Info Size	8838
+AF Info Size	8838
+AF Micro Adj Mode	Disable
+AF Micro Adj Value	0
+AF Point Display During Focus	Selected (constant)
+AF Point Switching	2147483647
+AF Points In Focus	(none)
+AF Points In Focus	(none)
+AF Points Selected	0
+AF Points Selected	0
+AF Tracking Sensitivity	2147483647
+AI Servo First Image	Release Priority
+AI Servo Second Image	Equal Priority
+Add Aspect Ratio Info	Off
+Add IPTC Information	Disable
+Ambience Selection	Standard
+Aperture	8.0
+Aperture Range	Manual: Closed 64; Open 1; Auto: Closed 25; Open 2.7
+Aperture Value	8.0
+Artist
+Aspect Ratio	3:2
+Auto AF Point Sel EOS iTR AF	Enable
+Auto Exposure Bracketing	Off
+Auto Exposure Bracketing	Off
+Auto ISO	100
+Auto ISO	100
+Auto Lighting Optimizer	Off
+Auto Rotate	None
+Auto Rotate	None
+Av Setting Without Lens	Disable
+Avg Bitrate	180 Mbps
+Base ISO	259
+Base ISO	259
+Battery Type	LP-E6P
+Bit Depth	24
+Bit Depth	24
+Bit Depth	24
+Bits Per Sample	8 8 8
+Black Mask Bottom Border	0
+Black Mask Left Border	0
+Black Mask Right Border	0
+Black Mask Top Border	0
+Bracket Mode	AEB
+Bracket Mode	AEB
+Bracket Shot Number	0
+Bracket Shot Number	0
+Bracket Value	0
+Bracket Value	0
+Bulb Duration	0
+Bulb Duration	0
+Camera ISO	Auto
+Camera ISO	Auto
+Camera Model Name	Canon EOS R5m2
+Camera Temperature	24 C
+Camera Temperature	24 C
+Camera Type	EOS High-end
+Camera Type	EOS High-end
+Canon 0x0019	1
+Canon 0x0032	44 1 5 3830882677 2470564406 1585267087 662025305 0 0 0 0
+Canon 0x0033	968657348 2470510812 1585267087 662025305
+Canon 0x003f	17
+Canon 0x4011	(60 bytes binary data)
+Canon 0x4012
+Canon 0x4027	24 525824 1744830481 0 13684944 65793
+Canon 0x402c	8 0
+Canon 0x402e	(60 bytes binary data)
+Canon 0x4033	(60 bytes binary data)
+Canon 0x4033	(60 bytes binary data)
+Canon 0x4035	(60 bytes binary data)
+Canon 0x4035	(60 bytes binary data)
+Canon 0x4037	(24 bytes binary data)
+Canon 0x4039	117 161 86 228 54 210 65 147 143 65 125 94 89 180 117 39
+Canon 0x403c	16 1 0 0
+Canon 0x4040	40 0 0 0 0 0 0 0 0 1
+Canon 0x4045	(60 bytes binary data)
+Canon 0x4049	8 0 0 0
+Canon 0x404b	65535 65535
+Canon 0x404b	65535 65535
+Canon 0x404e	12 0 0
+Canon 0x4053	36 0 0 0 0 0 0 0 0
+Canon 0x4054	512 1 0 1129071616 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 [...]
+Canon 0x4055	16 0 0 1 0 0 0 0
+Canon 0x4056	11111 6861 8352 2349 3840 6840 48 24 576 298 148 148 15[...]
+Canon 0x4059	40 4294967168 36044800 24041600 3597 27 0 950 700 2000
+Canon 0x405b	(60 bytes binary data)
+Canon 0x405d	8 0 65535 0
+Canon Custom Functions 2 0x010c	9984 -3840 9984 -3840 11520 -3840
+Canon Custom Functions 2 0x0115	1
+Canon Custom Functions 2 0x0718	0
+Canon Exposure Mode	Manual
+Canon Exposure Mode	Manual
+Canon Firmware Version	Firmware Version 1.2.0
+Canon Flash Info	0 0 0 0
+Canon Flash Mode	Off
+Canon Flash Mode	Off
+Canon Image Height	5464
+Canon Image Height	5464
+Canon Image Size	n/a
+Canon Image Size	n/a
+Canon Image Type	Canon EOS R5m2
+Canon Image Width	8192
+Canon Image Width	8192
+Canon Model ID	Unknown (0x80000496)
+Chromatic Aberration Setting	On
+Chromatic Aberration Setting	On
+Chunk Offset 64	(16 bytes binary data)
+Chunk Offset 64	(16 bytes binary data)
+Chunk Offset 64	(16 bytes binary data)
+Chunk Offset 64	(16 bytes binary data)
+Circle Of Confusion	0.030 mm
+Color Data Version	64
+Color Space	sRGB
+Color Space	sRGB
+Color Temperature	5200
+Color Temperature	5200
+Color Tone	Normal
+Color Tone	Normal
+Compatible Brands	crx , isom
+Components Configuration	Y, Cb, Cr, -
+Compression	JPEG (old-style)
+Compressor ID	CRAW
+Compressor ID	CRAW
+Compressor ID	CRAW
+Compressor Version	CanonCR3_001/00.10.00/00.00.00
+Continuous Drive	Continuous, High+
+Continuous Drive	Continuous, High+
+Continuous Shooting Speed	Hi 15000; Cont 15000; Lo 5000; Soft 8000; Soft LS 3000
+Continuous Shot Limit	Disable; 99 shots
+Contrast	Normal
+Contrast	Normal
+Control Mode	Camera Local Control
+Control Mode	Camera Local Control
+Copyright
+Create Date	2026:01:24 16:16:37+01:00
+Create Date	2026:01:24 16:16:37
+Create Date	2026:01:24 16:16:37.25-08:00
+Crop Bottom Margin	0
+Crop Left Margin	0
+Crop Right Margin	0
+Crop Top Margin	0
+Cropped Image Height	5464
+Cropped Image Left	0
+Cropped Image Top	0
+Cropped Image Width	8192
+Current Time	0 s
+Custom Controls	1 0 19 0 0 0 0 14 135 0 0 0 0 14 17 0 4 0 90 0 25 0 134 0 13 0 14 2 92 2 5 7 29 0 76 0 75 0 75 0 76 0 140 0 0 0 0 0 139 0 29 0 54 0 0 0 88 0 103 0 52 0 105 0 53 0 4 0 3 5376 0 0 0 0 0 0 0 0 0 65535 0 0 5200 0 0 11 0 0 0 0 0 0 65535 0 7 0 4 127 4 2 5 8 0 1 29 0 10 0 47 0 29 0 49 0
+Custom Picture Style File Name
+Custom Rendered	Normal
+Date/Time Original	2026:01:24 16:16:37
+Date/Time Original	2026:01:24 16:16:37.25-08:00
+Daylight Savings	Off
+Default Erase Option	Erase selected
+Depth Of Field	inf (34.04 m - inf)
+Dial Direction Tv Av	Normal
+Digital Gain	0
+Digital Gain	0
+Digital Lens Optimizer	Stanard
+Digital Lens Optimizer Setting	On
+Digital Lens Optimizer Setting	On
+Digital Zoom	None
+Digital Zoom	None
+Distortion Correction Setting	Off
+Distortion Correction Setting	Off
+Drive Mode	Continuous Shooting
+Duration	1.00 s
+Dust Removal Data	(1,024 bytes binary data)
+Easy Mode	Manual
+Easy Mode	Manual
+Exif Image Height	5464
+Exif Image Width	8192
+Exif Version	0231
+Exposure Compensation	0
+Exposure Compensation	0
+Exposure Compensation	0
+Exposure Level Increments	1/3 Stop
+Exposure Mode	Manual
+Exposure Program	Manual
+Exposure Time	1/640
+Exposure Time	1/640
+Exposure Time	1/609
+Exposure Time	1/609
+F Number	8.0
+F Number	8.0
+F Number	8
+F Number	8
+FE Microadjustment	Disable; 0; 8; 0
+Field Of View	21.5 deg
+Flash	No Flash
+Flash Activity	0
+Flash Activity	0
+Flash Bits	E-TTL
+Flash Bits	E-TTL
+Flash Exposure Compensation	0
+Flash Exposure Compensation	0
+Flash Exposure Compensation	0
+Flash Exposure Lock	Off
+Flash Exposure Lock	Off
+Flash Guide Number	0
+Flash Guide Number	0
+Flash Type	Built-In Flash
+Flashpix Version	0100
+Flavor	(94,564 bytes binary data)
+Focal Length	95 mm (35 mm equivalent: 94.9 mm)
+Focal Length	95 mm
+Focal Length	95 mm
+Focal Length	95 mm
+Focal Plane Resolution Unit	inches
+Focal Plane X Resolution	5773.079634
+Focal Plane X Unknown	62440
+Focal Plane Y Resolution	5769.799366
+Focal Plane Y Unknown	19190
+Focal Type	Zoom
+Focal Units	1/mm
+Focal Units	1/mm
+Focus Continuous	Single
+Focus Continuous	Single
+Focus Distance Lower	inf
+Focus Distance Lower	inf
+Focus Distance Lower	81.91 m
+Focus Distance Lower	81.91 m
+Focus Distance Upper	inf
+Focus Distance Upper	81.91 m
+Focus Distance Upper	inf
+Focus Distance Upper	81.91 m
+Focus Mode	AI Servo AF
+Focus Mode	AI Servo AF
+Focus Range	Auto
+Focus Range	Auto
+Focus Ring Rotation	Normal
+Free	(232 bytes binary data)
+GPS Altitude	212.6 m Above Sea Level
+GPS Altitude	212.6 m
+GPS Altitude Ref	Above Sea Level
+GPS Date Stamp	2026:01:25
+GPS Date/Time	2026:01:25 00:16:12Z
+GPS Latitude	46.88436833 N
+GPS Latitude	46.88436833
+GPS Latitude Ref	North
+GPS Longitude	122.30017167
+GPS Longitude	122.30017167 W
+GPS Longitude Ref	West
+GPS Map Datum	WGS-84
+GPS Position	46.88436833 N, 122.30017167 W
+GPS Satellites
+GPS Status	Measurement Active
+GPS Time Stamp	00:16:12
+GPS Version ID	2.3.0.0
+Graphics Mode	srcCopy
+Graphics Mode	srcCopy
+Graphics Mode	srcCopy
+HDR	Off
+HDR Effect	Natural
+Handler Type	Video Track
+Handler Type	NRT Metadata
+Handler Type	Video Track
+Handler Type	Video Track
+High ISO Noise Reduction	Standard
+Highlight Tone Priority	Off
+Hyperfocal Distance	37.49 m
+ISO	250
+ISO	259
+ISO	250
+ISO Speed Increments	1/3 Stop
+Image Height	5650
+Image Height	5464
+Image Height	1536
+Image Height	1536
+Image Height	5464
+Image Height	5464
+Image Size	8192x5464
+Image Stabilization	On (2)
+Image Stabilization	On (2)
+Image Unique ID	75a156e436d241938f417d5e59b47527
+Image Width	8480
+Image Width	8192
+Image Width	2304
+Image Width	8192
+Image Width	2304
+Image Width	8192
+Internal Serial Number	UQ0048877
+JPEG Info	(4 bytes binary data)
+Jpg From Raw	embedded 8192x5464 JPEG (44.8 megapixels, 3,847,969 bytes)
+Lens	70.0 - 200 mm
+Lens	70.0 - 200 mm (35 mm equivalent: 69.9 - 199.7 mm)
+Lens Drive When AF Impossible	Continue Focus Search
+Lens ID	Canon RF 70-200mm F2.8L IS USM
+Lens Info	70-200mm f/0
+Lens Model	RF70-200mm F2.8 L IS USM
+Lens Model	RF70-200mm F2.8 L IS USM
+Lens Serial Number	2350003333
+Lens Serial Number	2350003333
+Lens Type	Canon RF 50mm F1.2L USM or other Canon RF Lens
+Lens Type	Canon RF 50mm F1.2L USM or other Canon RF Lens
+Light Value	14.0
+Live View Shooting	On
+Live View Shooting	On
+Long Exposure Noise Reduction	On
+Macro Mode	Normal
+Macro Mode	Normal
+Major Brand	Canon Raw (.CRX)
+Make	Canon
+Maker Note Canon	(35,560 bytes binary data)
+Manual AF Point Sel Pattern	Stops at AF Area Edges
+Manual Flash Output	n/a
+Manual Flash Output	n/a
+Matrix Structure	1 0 0 0 1 0 0 0 1
+Matrix Structure	1 0 0 0 1 0 0 0 1
+Matrix Structure	1 0 0 0 1 0 0 0 1
+Matrix Structure	1 0 0 0 1 0 0 0 1
+Matrix Structure	1 0 0 0 1 0 0 0 1
+Max Aperture	2.8
+Max Aperture	2.8
+Max Focal Length	200 mm
+Max Focal Length	200 mm
+Measured EV	13.88
+Measured EV	13.88
+Measured EV 2	28.5
+Measured EV 2	28.5
+Measured RGGB	607 1024 1024 569
+Media Create Date	2026:01:25 01:16:37+01:00
+Media Create Date	2026:01:25 01:16:37+01:00
+Media Create Date	2026:01:25 01:16:37+01:00
+Media Create Date	2026:01:25 01:16:37+01:00
+Media Data	embedded 8192x5464 JPEG (44.8 megapixels, 22,555,818 bytes)
+Media Data Offset	377490
+Media Data Size	22555818
+Media Duration	1.00 s
+Media Duration	1.00 s
+Media Duration	1.00 s
+Media Duration	1.00 s
+Media Header Version	0
+Media Header Version	0
+Media Header Version	0
+Media Header Version	0
+Media Language Code	eng
+Media Language Code	eng
+Media Language Code	eng
+Media Language Code	eng
+Media Modify Date	2026:01:25 01:16:37+01:00
+Media Modify Date	2026:01:25 01:16:37+01:00
+Media Modify Date	2026:01:25 01:16:37+01:00
+Media Modify Date	2026:01:25 01:16:37+01:00
+Media Time Scale	1
+Media Time Scale	1
+Media Time Scale	1
+Media Time Scale	1
+Megapixels	44.8
+Meta Format	CTMD
+Metering Mode	Evaluative
+Metering Mode	Multi-segment
+Metering Mode	Evaluative
+Min Aperture	32
+Min Aperture	32
+Min Focal Length	70 mm
+Min Focal Length	70 mm
+Minor Version	0.0.1
+Modify Date	2026:01:24 16:16:37
+Modify Date	2026:01:24 16:16:37+01:00
+Modify Date	2026:01:24 16:16:37.25-08:00
+Movie Header Version	0
+Multi Exposure	Off
+Multi Exposure Control	Additive
+Multi Exposure Shots	0
+Multi Function Lock	Unknown (595)
+ND Filter	Off
+ND Filter	Off
+Next Track ID	5
+Null Media Header	(4 bytes binary data)
+Num AF Points	1053
+Num AF Points	1053
+Offset Time	-08:00
+Offset Time Digitized	-08:00
+Offset Time Original	-08:00
+One Shot AF Release	Focus Priority
+Op Color	0 0 0
+Op Color	0 0 0
+Op Color	0 0 0
+Optical Zoom Code	22
+Optical Zoom Code	22
+Orientation	Horizontal (normal)
+Orientation Linked AF	Separate Area+Points
+Owner Name
+Owner Name
+Peripheral Illumination Corr	Off
+Peripheral Lighting Setting	On
+Peripheral Lighting Setting	On
+Picture Style	Standard
+Picture Style	Standard
+Picture Style PC	None; None; None
+Picture Style User Def	Standard; Standard; Standard
+Poster Time	0 s
+Preferred Rate	1
+Preferred Volume	100.00%
+Preview Duration	0 s
+Preview Image	embedded 1620x1080 JPEG (1.7 megapixels, 262,824 bytes)
+Preview Time	0 s
+Quality	CRAW
+Quality	CRAW
+RF Lens MF Focus Ring Sensitivity	Varies With Rotation Speed
+RF Lens Type	Canon RF 70-200mm F2.8L IS USM
+RF Lens Type	Canon RF 70-200mm F2.8L IS USM
+Rating	0
+Raw Burst Image Count	0
+Raw Burst Image Num	0
+Raw Jpg Size	Large
+Raw Jpg Size	Large
+Recommended Exposure Index	250
+Record Mode	CR3
+Record Mode	CR3
+Red Eye Reduction	Off
+Resolution Unit	inches
+Retract Lens On Power Off	Enable
+Rotation	0
+SRAW Quality	n/a
+SRAW Quality	n/a
+Safety Shift	Enable (Tv/Av)
+Same Exposure For New Aperture	Unknown (3)
+Sample Duration	1.00 s
+Sample Duration	1.00 s
+Sample Sizes	(16 bytes binary data)
+Sample Sizes	(12 bytes binary data)
+Sample Sizes	(16 bytes binary data)
+Sample Sizes	(16 bytes binary data)
+Sample Time	0 s
+Sample Time	0 s
+Sample To Chunk	(20 bytes binary data)
+Sample To Chunk	(20 bytes binary data)
+Sample To Chunk	(20 bytes binary data)
+Sample To Chunk	(20 bytes binary data)
+Saturation	Normal
+Saturation	Normal
+Scale Factor To 35 mm Equivalent	1.0
+Scene Capture Type	Standard
+Select AF Area Selection Mode	Single-point AF, Auto, Zone AF, AF Point Expansion (4 point), Spot AF, AF Point Expansion (8 point), [6], [8], [9], [10], [11], [12], [13], [14]
+Selection Duration	0 s
+Selection Time	0 s
+Self Timer	Off
+Self Timer	Off
+Sensitivity Type	Recommended Exposure Index
+Sensor Blue Level	0
+Sensor Blue Level	0
+Sensor Bottom Border	5639
+Sensor Height	5650
+Sensor Left Border	272
+Sensor Red Level	0
+Sensor Red Level	0
+Sensor Right Border	8463
+Sensor Top Border	176
+Sensor Width	8480
+Serial Number	145502100267
+Sharpness	4
+Sharpness	4
+Sharpness Frequency	n/a
+Sharpness Frequency	n/a
+Shooting Mode	Manual
+Shot Number In Continuous Burst	0
+Shot Number In Continuous Burst	0
+Shutter Curtain Sync	1st-curtain sync
+Shutter Mode	Electronic
+Shutter Mode	Electronic
+Shutter Release Without Lens	Disable
+Shutter Speed	1/640
+Shutter Speed Value	1/664
+Slow Shutter	None
+Slow Shutter	None
+Source Image Height	5464
+Source Image Height	5464
+Source Image Height	1536
+Source Image Width	8192
+Source Image Width	8192
+Source Image Width	2304
+Sub Sec Time	25
+Sub Sec Time Digitized	25
+Sub Sec Time Original	25
+Target Aperture	8
+Target Aperture	8
+Target Exposure Time	1/645
+Target Exposure Time	1/645
+Thumbnail Image	embedded 160x120 JPEG (0.019 megapixels, 9,144 bytes)
+Thumbnail Image Valid Area	0 159 6 113
+Time Scale	1
+Time Stamp	2026:01:25 01:16:37.25
+Time To Sample Table	(16 bytes binary data)
+Time Zone	+01:00
+Time Zone City	Paris
+Tone Curve	Standard
+Tone Curve	Standard
+Track Create Date	2026:01:25 01:16:37+01:00
+Track Create Date	2026:01:25 01:16:37+01:00
+Track Create Date	2026:01:25 01:16:37+01:00
+Track Create Date	2026:01:25 01:16:37+01:00
+Track Duration	1.00 s
+Track Duration	1.00 s
+Track Duration	1.00 s
+Track Duration	1.00 s
+Track Header Version	0
+Track Header Version	0
+Track Header Version	0
+Track Header Version	0
+Track ID	4
+Track ID	3
+Track ID	1
+Track ID	2
+Track Layer	0
+Track Layer	0
+Track Layer	0
+Track Layer	0
+Track Modify Date	2026:01:25 01:16:37+01:00
+Track Modify Date	2026:01:25 01:16:37+01:00
+Track Modify Date	2026:01:25 01:16:37+01:00
+Track Modify Date	2026:01:25 01:16:37+01:00
+Track Volume	0.00%
+Track Volume	0.00%
+Track Volume	0.00%
+Track Volume	0.00%
+USM Lens Electronic MF	Unknown (4)
+Unknown CCDT	(16 bytes binary data)
+Unknown CTBO	(104 bytes binary data)
+Unknown free
+Unknown free
+Unknown free
+Unknown free
+Unknown free
+Usable Shooting Modes	Flags 0x1ff
+User Comment
+VF Display Illumination	Auto
+VRD Offset	0
+Valid AF Points	1
+Valid AF Points	1
+Video Frame Rate	1
+Video Frame Rate	1
+Video Frame Rate	1
+WB Bracket Mode	Off
+WB Bracket Mode	Off
+WB Bracket Value AB	0
+WB Bracket Value AB	0
+WB Bracket Value GM	0
+WB Bracket Value GM	0
+WB Shift AB	0
+WB Shift AB	0
+WB Shift GM	0
+WB Shift GM	0
+White Balance	Auto
+White Balance	Auto
+White Balance	Auto
+White Balance Blue	0
+White Balance Blue	0
+White Balance Red	0
+White Balance Red	0
+X Resolution	72
+X Resolution	72
+X Resolution	350
+X Resolution	72
+Y Resolution	72
+Y Resolution	350
+Y Resolution	72
+Y Resolution	72
+Zoom Source Width	0
+Zoom Source Width	0
+Zoom Target Width	0
+Zoom Target Width	0
+Directory	/Volumes/Media/Crisan Media/Photos/2026/test_location_timezone
+Exif Byte Order	Little-endian (Intel, II)
+Exif Byte Order	Little-endian (Intel, II)
+Exif Byte Order	Little-endian (Intel, II)
+Exif Byte Order	Little-endian (Intel, II)
+File Access Date/Time	2026:03:03 22:33:18+01:00
+File Inode Change Date/Time	2026:03:03 22:33:18+01:00
+File Modification Date/Time	2026:03:03 22:33:18+01:00
+File Name	R52M4346.CR3
+File Permissions	-rwx------
+File Size	23 MB
+File Type	CR3
+File Type Extension	cr3
+MD Item FS Content Change Date	2026:03:03 22:33:18+01:00
+MD Item FS Creation Date	1970:01:01 00:00:00+00:00
+MD Item FS Creator Code
+MD Item FS Finder Flags	0
+MD Item FS Has Custom Icon	0
+MD Item FS Invisible	0
+MD Item FS Is Extension Hidden	0
+MD Item FS Is Stationery	0
+MD Item FS Label	0 (none)
+MD Item FS Name	R52M4346.CR3
+MD Item FS Node Count	22933308
+MD Item FS Owner Group ID	20
+MD Item FS Owner User ID	501
+MD Item FS Size	22933308
+MD Item FS Type Code
+MIME Type	image/x-canon-cr3
+Altitude	212,6 m
+altTextAccessibility
+aspectRatio	1.4992679355783
+bitDepth	16
+Camera Make	Canon
+Camera Model	Canon EOS R5m2
+Camera Serial Number	145502100267
+cameraSN	145502100267
+Caption
+captureTime	790960597.25
+City
+colorNameForLabel	gray
+Copyright
+Copyright Info URL
+Copyright Status	Unknown
+Country
+countStackInFolderMembers	0
+countVirtualCopies	0
+Creator
+Creator Address
+Creator City
+Creator Country
+Creator E-Mail
+Creator Job Title
+Creator Phone
+Creator Postal Code
+Creator State / Province
+Creator Website
+Creditline
+Cropped Dimensions	8192 x 5464
+Date Created	2026-01-24T16:16:37.250-08:00
+Date Time	24.01.26 16:16:37.250
+Date Time Digitized	24.01.26 16:16:37.250
+Date Time Original	24.01.26 16:16:37.250
+dateTimeDigitizedISO8601	2026-01-24T16:16:37.25-08:00
+dateTimeISO8601	2026-01-24T16:16:37.25-08:00
+dateTimeOriginalISO8601	2026-01-24T16:16:37.25-08:00
+Description Writer
+Digital Source Type	nil
+Dimensions	8192 x 5464
+durationInSeconds	0
+editCount	5
+Exposure	¹⁄₆₄₀ sec at ƒ / 8,0
+Exposure Bias	0 EV
+Exposure Program	Manual
+extDescrAccessibility
+F-Stop	ƒ / 8,0
+File Name	R52M4346.CR3
+File Size	21,87 MB
+File Type	Raw
+fileFormat	RAW
+Flash	Did not fire
+Focal Length	95 mm
+Folder	test_location_timezone
+GPS	46°53'3.726" N 122°18'0.618" W
+Headline
+height	5464
+Instructions
+Intellectual Genre
+IPTC Extension Rights
+IPTC Scene Code
+IPTC Subject Code
+isCropped	false
+isExported	false
+isInStackInFolder	false
+ISO Country Code
+ISO Speed Rating	ISO 250
+isVideo	false
+isVirtualCopy	false
+Job Identifier
+Keywords
+keywordTagsForExport
+Label
+lastEditTime	794266664.14398
+Lens	RF70-200mm F2.8 L IS USM
+masterPhoto	322037
+Metadata Date	03.03.26 22:36:49.763
+Metering Mode	Pattern
+Minor Model Age Disclosure	nil
+orientation	AB
+Other Categories
+path	/Volumes/Media/Crisan Media/Photos/2026/test_location_timezone/R52M4346.CR3
+pickStatus	0
+PLUS Version	1.2.0
+preservedFileName	R52M4346.CR3
+Property Release Status	nil
+Release Status	nil
+Rights Usage Terms
+root_uuid	05F44271-29B9-4111-B1E5-35A8C050930A
+Shutter Speed	1/640 sec
+Source
+stackInFolderIsCollapsed	false
+stackPositionInFolder	1
+State / Province
+Sublocation
+Title
+uuid	0CB8F36B-53CE-405B-9FF0-62EA65C9637D
+width	8192
