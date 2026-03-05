@@ -1,4 +1,4 @@
-# `fixtime` (tz_shifter.py) - Architecture & Documentation
+# `fixtime` (fixtime.py) - Architecture & Documentation
 
 ## Overview
 `fixtime` is Pass 1 of a two-step forensic metadata pipeline designed to perfectly synchronize camera RAW files (`.CR3`, `.JPG`) with smartphone GPS tracklogs.
