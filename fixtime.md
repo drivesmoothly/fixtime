@@ -13,7 +13,7 @@ Because camera internal clocks drift (seconds to minutes) and do not natively re
 2. **Bulk Metadata Read:** Uses ExifTool to extract `DateTimeOriginal`, `GPSDateTime`, `GPSLatitude`, `GPSLongitude`, and `OffsetTimeOriginal` in a single, highly optimized batch read.
 3. **Timezone Resolution:** Uses the `timezonefinder` library to reverse-geocode the GPS coordinates of the first available Key Frame into an exact timezone (e.g., `America/Los_Angeles`) and calculates the UTC offset (`-08:00`).
 4. **Statistical Atomic Drift Calculation:** Compares the camera's naive clock (`DateTimeOriginal`) against the iPhone's atomic clock (`GPSDateTime`). It calculates this drift for *every* Key Frame and uses a statistical mode to lock onto the true sub-second drift delta.
-5. **Memory Loop & Execution:** Calculates the required shift (Target Timezone Jump + Atomic Drift). If a shift is needed, it commands ExifTool to perform a relative mathematical shift on the timestamps and writes the correct `OffsetTime` tags file-by-file with robust error handling.
+5. **Memory Loop & Execution:** Calculates the required shift (Target Timezone Jump + Atomic Drift). If a shift is needed, it commands ExifTool to perform a relative mathematical shift on the timestamps, secures the forensic backups, and writes the correct `OffsetTime` tags file-by-file with robust error handling.
 
 ---
 
@@ -36,21 +36,27 @@ Because camera internal clocks drift (seconds to minutes) and do not natively re
 ### 4. Idempotency
 The script is strictly idempotent. Because it reads the *current* `OffsetTimeOriginal` tag before calculating the math, running the script multiple times on the same folder will not result in double-shifting. If a folder is already perfectly aligned to the target timezone and drift, the script recognizes the required shift is `0`, skips the ExifTool write phase, and prints a success state.
 
----
+### 5. The Forensic Data Vault (Custom XMP Namespace)
+**The Problem:** Modifying standard EXIF metadata carries a risk of permanent data loss, and standard fields (like `UserComment`) are often overwritten or corrupted by Lightroom syncing. Additionally, Pass 2 (`injectgpx`) mixes interpolated coordinates with authentic camera coordinates, making it impossible to separate ground-truth data from estimates later.
+**The Solution:** The script relies on a custom ExifTool namespace to act as an indestructible, hidden vault inside the `.CR3` container. Lightroom cannot read or overwrite these tags.
+* **`XMP-tzshifter:OriginalCameraTime`**: Stores the pure, unshifted timestamp strictly as a backup.
+* **`XMP-tzshifter:LocationSource`**: Flags the file as `Camera` (ground-truth Bluetooth handshake) or `Orphan` (interpolated by the Pass 2 GPX script).
 
-## Future Roadmap: Custom XMP Forensic Backup
-*Context for future implementation: The user requested a way to safely store the original, unshifted `DateTimeOriginal` value directly inside the `.CR3` container before `fixtime` modifies it, without using `.xmp` sidecars.*
-
-**The Required Architecture:**
-Do not hijack standard EXIF tags (like `UserComment`) as Lightroom will corrupt them or display weird UI strings.
-Instead, implement an ExifTool Custom XMP Namespace (`XMP-tzshifter:OriginalCameraTime`).
-1. Create a `~/.ExifTool_config` file defining the custom namespace.
-2. In the Python write loop, before applying the `-AllDates` shift, append `-XMP-tzshifter:OriginalCameraTime<DateTimeOriginal`.
-3. This safely embeds the forensic backup invisibly inside the `.CR3` where Lightroom cannot reach it, allowing for perfect absolute reversibility in case of a catastrophic mathematical failure.
-
----
-
-## Dependencies
-* **ExifTool:** Must be installed and accessible in the system `$PATH`.
-* **Python Packages:** `timezonefinder` (for offline coordinate-to-timezone resolution).
-* **Environment:** Tested on macOS running over NAS (SMB protocols).
+**Required Local Configuration (`~/.ExifTool_config`):**
+To execute properly, the host machine must have this configuration file defined:
+```perl
+%Image::ExifTool::UserDefined = (
+    'Image::ExifTool::XMP::Main' => {
+        tzshifter => {
+            SubDirectory => { TagTable => 'Image::ExifTool::UserDefined::tzshifter' },
+        },
+    },
+);
+%Image::ExifTool::UserDefined::tzshifter = (
+    GROUPS        => { 0 => 'XMP', 1 => 'XMP-tzshifter', 2 => 'Image' },
+    NAMESPACE     => { 'tzshifter' => '[http://ns.tzshifter.com/1.0/](http://ns.tzshifter.com/1.0/)' },
+    WRITABLE      => 'string',
+    OriginalCameraTime => { Writable => 'string' },
+    LocationSource     => { Writable => 'string' },
+);
+1;  #end
