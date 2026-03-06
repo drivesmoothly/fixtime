@@ -11,6 +11,40 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from timezonefinder import TimezoneFinder
 
+# --- FORENSIC CONFIGURATION ---
+# Embedded ExifTool config to make the script portable across computers
+EXIFTOOL_CONFIG_CONTENT = """
+%Image::ExifTool::UserDefined = (
+    'Image::ExifTool::XMP::Main' => {
+        tzshifter => {
+            SubDirectory => {
+                TagTable => 'Image::ExifTool::UserDefined::tzshifter',
+            },
+        },
+    },
+);
+
+%Image::ExifTool::UserDefined::tzshifter = (
+    GROUPS        => { 0 => 'XMP', 1 => 'XMP-tzshifter', 2 => 'Image' },
+    NAMESPACE     => { 'tzshifter' => 'http://ns.tzshifter.com/1.0/' },
+    WRITABLE      => 'string',
+    OriginalCameraTime => { Writable => 'string' },
+    LocationSource     => { Writable => 'string' },
+);
+1;  #end
+"""
+
+def create_exiftool_config():
+    """Creates a temporary config file to ensure forensic tags work on any machine."""
+    try:
+        fd, path = tempfile.mkstemp(suffix='.config', text=True)
+        with os.fdopen(fd, 'w') as f:
+            f.write(EXIFTOOL_CONFIG_CONTENT)
+        return path
+    except Exception as e:
+        print(f"CRITICAL ERROR: Failed to write temporary ExifTool config. {e}")
+        sys.exit(1)
+
 def check_dependencies():
     """Ensures ExifTool is installed and accessible."""
     try:
@@ -19,7 +53,7 @@ def check_dependencies():
         print("CRITICAL ERROR: ExifTool is not installed or not in your system PATH.")
         sys.exit(1)
 
-def get_bulk_exif_data(argfile_path):
+def get_bulk_exif_data(argfile_path, config_path):
     """
     Asks ExifTool to scan a strictly controlled list of files to bypass SMB duplication bugs.
     Uses a single, highly optimized batch read for performance over network shares.
@@ -27,7 +61,7 @@ def get_bulk_exif_data(argfile_path):
     print("Scanning folder metadata (Full read mode for CR3 safety. This may take a few minutes over NAS)...")
 
     cmd = [
-        "exiftool", "-json", "-c", "%+.6f", "-q", "-q",
+        "exiftool", "-config", config_path, "-json", "-c", "%+.6f", "-q", "-q",
         "-DateTimeOriginal", "-GPSDateTime",
         "-GPSLatitude", "-GPSLongitude",
         "-OffsetTimeOriginal",
@@ -123,7 +157,6 @@ def main():
         print(f"ERROR: Directory '{target_dir}' does not exist.")
         sys.exit(1)
 
-    # --- NEW AUDIT LOGGING BLOCK ---
     print("\n==================================================")
     print(" fixtime - Forensic Time Alignment")
     print("==================================================")
@@ -134,203 +167,206 @@ def main():
     print(f"Initializing Timezone database... (DRY_RUN is {'ON' if args.dry_run else 'OFF'})")
     tf = TimezoneFinder()
 
-    # --- 1. PRE-SCAN (Deduplication) ---
-    valid_files = []
-    seen = set()
-    for filename in sorted(os.listdir(target_dir)):
-        if filename.startswith('.'):
-            continue
-        if filename.lower().endswith(('.cr3', '.jpg')) and filename not in seen:
-            seen.add(filename)
-            valid_files.append(os.path.join(target_dir, filename))
+    # Generate the portable ExifTool config for forensic tags
+    config_path = create_exiftool_config()
 
-    if not valid_files:
-        print("No valid CR3 or JPG files found.")
-        sys.exit(0)
-
-    # Use the ArgFile Architecture to bypass OS enumeration duties
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as temp_argfile:
-        for file_path in valid_files:
-            temp_argfile.write(f"{file_path}\n")
-        argfile_path = temp_argfile.name
-
-    # --- 2. BULK METADATA READ ---
-    scan_start_time = time.time()
     try:
-        raw_data = get_bulk_exif_data(argfile_path)
-    finally:
-        os.remove(argfile_path)
+        # --- 1. PRE-SCAN (Deduplication) ---
+        valid_files = []
+        seen = set()
+        for filename in sorted(os.listdir(target_dir)):
+            if filename.startswith('.'):
+                continue
+            if filename.lower().endswith(('.cr3', '.jpg')) and filename not in seen:
+                seen.add(filename)
+                valid_files.append(os.path.join(target_dir, filename))
 
-    if not raw_data:
-        print("No EXIF data extracted.")
-        sys.exit(0)
+        if not valid_files:
+            print("No valid CR3 or JPG files found.")
+            sys.exit(0)
 
-    # Sort data immediately for consistent logging and chronological processing
-    raw_data.sort(key=lambda x: x.get("SourceFile", ""))
-    scan_duration = time.time() - scan_start_time
+        # Use the ArgFile Architecture to bypass OS enumeration duties
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as temp_argfile:
+            for file_path in valid_files:
+                temp_argfile.write(f"{file_path}\n")
+            argfile_path = temp_argfile.name
 
-    # --- 3. OFFSET & ATOMIC DRIFT DETERMINATION ---
-    manual_mode = False
-    if args.target_timezone:
-        # Manual Override: Bypasses GPS resolution if user provides direct target/drift
-        global_offset = args.target_timezone
-        global_drift = args.drift
-        consensus_tz = "Manual Override"
-        manual_mode = True
+        # --- 2. BULK METADATA READ ---
+        scan_start_time = time.time()
+        try:
+            raw_data = get_bulk_exif_data(argfile_path, config_path)
+        finally:
+            os.remove(argfile_path)
 
-        # Robust Error Handling for the current-timezone argument
-        if args.current_timezone and parse_offset_string_to_seconds(args.current_timezone) is None:
-            print("CRITICAL ERROR: Invalid --current-timezone format. Please use formats like '+01:00' or '-08:00'.")
-            sys.exit(1)
+        if not raw_data:
+            print("No EXIF data extracted.")
+            sys.exit(0)
 
-        cam_info = f" (Camera assumed at {args.current_timezone})" if args.current_timezone else ""
-        print(f"⚠️  Using MANUAL override: Target Timezone {global_offset}{cam_info}, Drift {global_drift}s")
-    else:
-        # GPS Resolution: Establish ground-truth timezone and calculate atomic drift
-        all_drifts = []
-        all_offsets = []
-        consensus_tz = "Unknown"
+        raw_data.sort(key=lambda x: x.get("SourceFile", ""))
+        scan_duration = time.time() - scan_start_time
+
+        # --- 3. OFFSET & ATOMIC DRIFT DETERMINATION ---
+        manual_mode = False
+        if args.target_timezone:
+            global_offset = args.target_timezone
+            global_drift = args.drift
+            consensus_tz = "Manual Override"
+            manual_mode = True
+
+            if args.current_timezone and parse_offset_string_to_seconds(args.current_timezone) is None:
+                print("CRITICAL ERROR: Invalid --current-timezone format. Please use formats like '+01:00' or '-08:00'.")
+                sys.exit(1)
+
+            cam_info = f" (Camera assumed at {args.current_timezone})" if args.current_timezone else ""
+            print(f"⚠️  Using MANUAL override: Target Timezone {global_offset}{cam_info}, Drift {global_drift}s")
+        else:
+            all_drifts = []
+            all_offsets = []
+            consensus_tz = "Unknown"
+
+            for data in raw_data:
+                if "GPSLatitude" in data and "GPSDateTime" in data:
+                    drift, offset, tz = get_gps_stats(data, tf)
+                    if drift is not None:
+                        all_drifts.append(drift)
+                        all_offsets.append(offset)
+                        consensus_tz = tz
+
+            if not all_drifts:
+                print("CRITICAL ERROR: No photos with GPS data found. Cannot establish timeline. Use --target-timezone to override.")
+                sys.exit(1)
+
+            offset_counts = Counter(all_offsets)
+            global_offset = offset_counts.most_common(1)[0][0]
+
+            drift_counts = Counter(all_drifts)
+            max_frequency = max(drift_counts.values())
+
+            if max_frequency >= 2:
+                most_common_drifts = [d for d, c in drift_counts.items() if c == max_frequency]
+                global_drift = max(most_common_drifts)
+            else:
+                global_drift = max(all_drifts)
+
+        target_offset_sec = parse_offset_string_to_seconds(global_offset)
+
+        print("\n==================================================")
+        print(" Master Timecode Sync Established")
+        print("==================================================")
+        print(f" 📍 Target Timezone : {consensus_tz} [{global_offset}]")
+        print(f" ⏱️ Atomic Drift    : {global_drift} seconds")
+        print("==================================================")
+
+        # --- 4. MEMORY LOOP & EXECUTION ---
+        stats = {"total": len(raw_data), "key_frames": 0, "orphans": 0, "shifted": 0, "tagged_only": 0, "skipped": 0, "errors": 0}
+        process_start_time = time.time()
 
         for data in raw_data:
-            if "GPSLatitude" in data and "GPSDateTime" in data:
-                drift, offset, tz = get_gps_stats(data, tf)
-                if drift is not None:
-                    all_drifts.append(drift)
-                    all_offsets.append(offset)
-                    consensus_tz = tz
+            file_path = data.get("SourceFile")
+            filename = os.path.basename(file_path)
 
-        if not all_drifts:
-            print("CRITICAL ERROR: No photos with GPS data found. Cannot establish timeline. Use --target-timezone to override.")
-            sys.exit(1)
+            if "DateTimeOriginal" not in data:
+                print(f"SKIPPING: {filename} (Corrupt or missing DateTimeOriginal)")
+                stats["skipped"] += 1
+                continue
 
-        # Statistical "Stale GPS" Filtering: Use mode to lock onto true atomic drift
-        offset_counts = Counter(all_offsets)
-        global_offset = offset_counts.most_common(1)[0][0]
+            existing_offset_str = data.get("OffsetTimeOriginal")
+            has_gps = "GPSLatitude" in data and "GPSDateTime" in data
 
-        drift_counts = Counter(all_drifts)
-        max_frequency = max(drift_counts.values())
-
-        if max_frequency >= 2:
-            most_common_drifts = [d for d, c in drift_counts.items() if c == max_frequency]
-            global_drift = max(most_common_drifts)
-        else:
-            global_drift = max(all_drifts)
-
-    target_offset_sec = parse_offset_string_to_seconds(global_offset)
-
-    print("\n==================================================")
-    print(" Master Timecode Sync Established")
-    print("==================================================")
-    print(f" 📍 Target Timezone : {consensus_tz} [{global_offset}]")
-    print(f" ⏱️ Atomic Drift    : {global_drift} seconds")
-    print("==================================================")
-
-    # --- 4. MEMORY LOOP & EXECUTION ---
-    stats = {"total": len(raw_data), "key_frames": 0, "orphans": 0, "shifted": 0, "tagged_only": 0, "skipped": 0, "errors": 0}
-    process_start_time = time.time()
-
-    for data in raw_data:
-        file_path = data.get("SourceFile")
-        filename = os.path.basename(file_path)
-
-        if "DateTimeOriginal" not in data:
-            print(f"SKIPPING: {filename} (Corrupt or missing DateTimeOriginal)")
-            stats["skipped"] += 1
-            continue
-
-        existing_offset_str = data.get("OffsetTimeOriginal")
-        has_gps = "GPSLatitude" in data and "GPSDateTime" in data
-
-        if has_gps:
-            stats["key_frames"] += 1
-            frame_type = f"KEY FRAME ({consensus_tz})"
-        else:
-            stats["orphans"] += 1
-            frame_type = "ORPHAN FRAME"
-
-        existing_offset_sec = parse_offset_string_to_seconds(existing_offset_str)
-
-        # If the file has no offset, determine the baseline using the current-timezone logic
-        if existing_offset_sec is None:
-            if args.current_timezone:
-                existing_offset_sec = parse_offset_string_to_seconds(args.current_timezone)
+            if has_gps:
+                stats["key_frames"] += 1
+                frame_type = f"KEY FRAME ({consensus_tz})"
             else:
-                existing_offset_sec = target_offset_sec
+                stats["orphans"] += 1
+                frame_type = "ORPHAN FRAME"
 
-        # Calculate required shift: (Target Timezone Jump + Atomic Drift)
-        tz_shift_sec = target_offset_sec - existing_offset_sec
-        total_shift_sec = tz_shift_sec + global_drift
+            existing_offset_sec = parse_offset_string_to_seconds(existing_offset_str)
 
-        # Idempotency: Do not double-shift if values are already perfect
-        if total_shift_sec == 0 and existing_offset_str == global_offset:
-            print(f"SKIPPING: {filename} [{frame_type}] (Time, Drift, and Offset already correct)")
-            stats["skipped"] += 1
-            continue
+            if existing_offset_sec is None:
+                if args.current_timezone:
+                    existing_offset_sec = parse_offset_string_to_seconds(args.current_timezone)
+                else:
+                    existing_offset_sec = target_offset_sec
 
-        shift_str = format_shift_string(total_shift_sec)
-        print(f"\n--- PROCESSING: {filename} [{frame_type}] ---")
+            tz_shift_sec = target_offset_sec - existing_offset_sec
+            total_shift_sec = tz_shift_sec + global_drift
 
-        update_cmd = [
-            "exiftool", "-overwrite_original",
-            f"-OffsetTime={global_offset}",
-            f"-OffsetTimeOriginal={global_offset}",
-            f"-OffsetTimeDigitized={global_offset}"
-        ]
+            if total_shift_sec == 0 and existing_offset_str == global_offset:
+                print(f"SKIPPING: {filename} [{frame_type}] (Time, Drift, and Offset already correct)")
+                stats["skipped"] += 1
+                continue
 
-        # The Forensic Data Vault
-        if has_gps:
-            update_cmd.append("-XMP-tzshifter:LocationSource=Camera")
-        elif manual_mode:
-            update_cmd.append("-XMP-tzshifter:LocationSource=Manual")
-        else:
-            update_cmd.append("-XMP-tzshifter:LocationSource=Orphan")
+            shift_str = format_shift_string(total_shift_sec)
+            print(f"\n--- PROCESSING: {filename} [{frame_type}] ---")
 
-        if total_shift_sec != 0:
-            print(f"  ACTION: Shift clock by {shift_str} & Tag {global_offset}")
-            update_cmd.append("-XMP-tzshifter:OriginalCameraTime<DateTimeOriginal")
-            update_cmd.append(f"-AllDates{shift_str}")
-        else:
-            print(f"  ACTION: Clock drift is 0. Tagging offset {global_offset} only.")
+            update_cmd = [
+                "exiftool", "-config", config_path, "-overwrite_original",
+                f"-OffsetTime={global_offset}",
+                f"-OffsetTimeOriginal={global_offset}",
+                f"-OffsetTimeDigitized={global_offset}"
+            ]
 
-        update_cmd.append(file_path)
+            if has_gps:
+                update_cmd.append("-XMP-tzshifter:LocationSource=Camera")
+            elif manual_mode:
+                update_cmd.append("-XMP-tzshifter:LocationSource=Manual")
+            else:
+                update_cmd.append("-XMP-tzshifter:LocationSource=Orphan")
 
-        if args.dry_run:
-            print(f"  [DRY RUN] {' '.join(update_cmd)}")
-            if total_shift_sec != 0: stats["shifted"] += 1
-            else: stats["tagged_only"] += 1
-        else:
-            result = subprocess.run(update_cmd, capture_output=True, text=True)
-            if result.returncode == 0:
-                print("  [SUCCESS] Metadata updated.")
+            if total_shift_sec != 0:
+                print(f"  ACTION: Shift clock by {shift_str} & Tag {global_offset}")
+                update_cmd.append("-XMP-tzshifter:OriginalCameraTime<DateTimeOriginal")
+                update_cmd.append(f"-AllDates{shift_str}")
+            else:
+                print(f"  ACTION: Clock drift is 0. Tagging offset {global_offset} only.")
+
+            update_cmd.append(file_path)
+
+            if args.dry_run:
+                print(f"  [DRY RUN] {' '.join(update_cmd)}")
                 if total_shift_sec != 0: stats["shifted"] += 1
                 else: stats["tagged_only"] += 1
             else:
-                print(f"  [ERROR] ExifTool failed to modify {filename}.")
-                print(f"  [EXIFTOOL MESSAGE] {result.stderr.strip()}")
-                stats["errors"] += 1
+                result = subprocess.run(update_cmd, capture_output=True, text=True)
+                if result.returncode == 0:
+                    print("  [SUCCESS] Metadata updated.")
+                    if total_shift_sec != 0: stats["shifted"] += 1
+                    else: stats["tagged_only"] += 1
+                else:
+                    print(f"  [ERROR] ExifTool failed to modify {filename}.")
+                    print(f"  [EXIFTOOL MESSAGE] {result.stderr.strip()}")
+                    stats["errors"] += 1
 
-    process_duration = time.time() - process_start_time
-    total_duration = time.time() - script_start_time
+        process_duration = time.time() - process_start_time
+        total_duration = time.time() - script_start_time
 
-    # --- 5. EXECUTION SUMMARY ---
-    print("\n==================================================")
-    print(" Execution Summary")
-    print("==================================================")
-    print(f" Total Valid Files Found : {stats['total']}")
-    print(f"   - Key Frames (GPS)    : {stats['key_frames']}")
-    print(f"   - Orphan Frames       : {stats['orphans']}")
-    print("--------------------------------------------------")
-    print(" Actions Taken:")
-    print(f"   - Time Shifted        : {stats['shifted']}")
-    print(f"   - Tagged Offset Only  : {stats['tagged_only']}")
-    print(f"   - Skipped (Perfect)   : {stats['skipped']}")
-    print(f"   - Errors              : {stats['errors']}")
-    print("--------------------------------------------------")
-    print(" Performance Metrics:")
-    print(f"   - Metadata Scan Phase : {format_duration(scan_duration)}")
-    print(f"   - File Write Phase    : {format_duration(process_duration)}")
-    print(f"   - Total Script Time   : {format_duration(total_duration)}")
-    print("==================================================\n")
+        # --- 5. EXECUTION SUMMARY ---
+        print("\n==================================================")
+        print(" Execution Summary")
+        print("==================================================")
+        print(f" Total Valid Files Found : {stats['total']}")
+        print(f"   - Key Frames (GPS)    : {stats['key_frames']}")
+        print(f"   - Orphan Frames       : {stats['orphans']}")
+        print("--------------------------------------------------")
+        print(" Actions Taken:")
+        print(f"   - Time Shifted        : {stats['shifted']}")
+        print(f"   - Tagged Offset Only  : {stats['tagged_only']}")
+        print(f"   - Skipped (Perfect)   : {stats['skipped']}")
+        print(f"   - Errors              : {stats['errors']}")
+        print("--------------------------------------------------")
+        print(" Performance Metrics:")
+        print(f"   - Metadata Scan Phase : {format_duration(scan_duration)}")
+        print(f"   - File Write Phase    : {format_duration(process_duration)}")
+        print(f"   - Total Script Time   : {format_duration(total_duration)}")
+        print("==================================================\n")
+
+    finally:
+        # Guarantee cleanup of the temporary config file even if the script crashes
+        if os.path.exists(config_path):
+            try:
+                os.remove(config_path)
+            except Exception as e:
+                print(f"WARNING: Could not remove temporary config file {config_path}: {e}")
 
 if __name__ == "__main__":
     main()
