@@ -74,4 +74,4 @@ run_injection() {
 
 # Execute the function, pipe to log, and view in less
 # 2>&1 ensures errors are also logged
-run_injection "$@" 2>&1 | tee "$LOG_FILE" | less -R
+run_injection "$@" 2>&1 | tee "$LOG_FILE"

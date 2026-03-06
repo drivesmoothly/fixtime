@@ -28,4 +28,4 @@ echo "📝 Log: $LOG_FILE"
 echo "------------------------------------------------"
 
 # Run the python script directly using the absolute path we found
-python3 "$FIXTIME_APP" "$@" 2>&1 | tee "$LOG_FILE" | less -R
+python3 "$FIXTIME_APP" "$@" 2>&1 | tee "$LOG_FILE"
