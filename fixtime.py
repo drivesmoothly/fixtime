@@ -139,7 +139,8 @@ def main():
     parser.add_argument("--no-confirm", action="store_true", help="Bypass manual verification pause for automation")
     parser.add_argument("--target-timezone", help="Manually specify TARGET timezone offset (e.g., -08:00)")
     parser.add_argument("--current-timezone", help="The timezone the camera clock was actually set to (e.g., +01:00)")
-    parser.add_argument("--drift", type=int, default=0, help="Manually specify atomic drift in seconds")
+    # Default is None so we can detect if user manually provided it
+    parser.add_argument("--drift", type=int, default=None, help="Manually specify atomic drift in seconds")
     args = parser.parse_args()
 
     check_dependencies()
@@ -237,8 +238,10 @@ def main():
         total_drifts_calculated = 0
 
         if args.target_timezone:
+            # Manual Timezone Mode
             global_offset = args.target_timezone
-            global_drift = args.drift
+            # Use arg drift if present, otherwise default to 0
+            global_drift = args.drift if args.drift is not None else 0
             consensus_tz = "Manual Override"
             manual_mode = True
 
@@ -249,6 +252,7 @@ def main():
             cam_info = f" (Camera assumed at {args.current_timezone})" if args.current_timezone else ""
             print(f"⚠️  Using MANUAL override: Target Timezone {global_offset}{cam_info}, Drift {global_drift}s")
         else:
+            # Auto GPS Mode
             all_drifts = []
             all_offsets =[]
             consensus_tz = "Unknown"
@@ -271,15 +275,23 @@ def main():
             drift_counts = Counter(all_drifts)
             max_frequency = max(drift_counts.values())
 
+            # Determine calculated drift first
             if max_frequency >= 2:
                 most_common_drifts =[d for d, c in drift_counts.items() if c == max_frequency]
-                global_drift = max(most_common_drifts)
+                calculated_drift = max(most_common_drifts)
             else:
-                global_drift = max(all_drifts)
+                calculated_drift = max(all_drifts)
 
-            # Gather stats for the new UI table
+            # Gather stats for the UI table
             total_drifts_calculated = len(all_drifts)
             drift_distribution = drift_counts.most_common(10)
+
+            # --- OVERRIDE LOGIC ---
+            if args.drift is not None:
+                global_drift = args.drift
+                print(f"⚠️  Manual Drift Override Active: Using {global_drift}s instead of calculated {calculated_drift}s")
+            else:
+                global_drift = calculated_drift
 
         target_offset_sec = parse_offset_string_to_seconds(global_offset)
 
@@ -289,7 +301,7 @@ def main():
         print(f" 📍 Target Timezone : {consensus_tz} [{global_offset}]")
         print(f" ⏱️ Atomic Drift    : {global_drift} seconds")
 
-        # --- NEW: DRIFT DISTRIBUTION TABLE ---
+        # --- DRIFT DISTRIBUTION TABLE ---
         if not manual_mode and drift_distribution:
             print("--------------------------------------------------")
             print(" 📊 Drift Distribution Analysis (Top 10):")
@@ -299,7 +311,7 @@ def main():
                 print(f"    {drift_val:>5} seconds : {count:>4} photos ({pct:>4.1f}%) {indicator}")
         print("==================================================")
 
-         # --- BATCH TIME ALIGNMENT PREP ---
+        # --- BATCH TIME ALIGNMENT PREP ---
         stats = {"total": len(paired_data), "key_frames": 0, "orphans": 0, "shifted": 0, "tagged_only": 0, "skipped": 0, "errors": 0}
         process_start_time = time.time()
 
@@ -383,7 +395,7 @@ def main():
 
         if not args.no_confirm and write_instructions:
             print("\n⚠️  Please review the calculated timezone and drift above.")
-            print(f"\n Would apply Phase 1 shifts to {stats['shifted']} files.")
+            print(f" Would apply Phase 1 shifts to {stats['shifted']} files.")
             try:
                 user_confirm = input("Do you want to apply this shift to the XMP files? (y/n): ").strip().lower()
                 if user_confirm not in ['y', 'yes']:
