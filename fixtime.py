@@ -365,18 +365,17 @@ def main():
             write_instructions.append(xmp_path)
             write_instructions.append("-execute")
 
-        if not args.no_confirm:
-            if write_instructions:
-                print("\n⚠️  Please review the calculated timezone and drift above.")
-                print(f"\n Would apply Phase 1 shifts to {stats['shifted']} files.")
-                try:
-                    user_confirm = input("Do you want to apply this shift to the XMP files? (y/n): ").strip().lower()
-                    if user_confirm not in ['y', 'yes']:
-                        print("\n🛑 Execution aborted by user. No files were modified.")
-                        sys.exit(0)
-                except KeyboardInterrupt:
-                    print("\n\n🛑 Execution aborted via keyboard interrupt. No files were modified.")
+        if not args.no_confirm and write_instructions:
+            print("\n⚠️  Please review the calculated timezone and drift above.")
+            print(f"\n Would apply Phase 1 shifts to {stats['shifted']} files.")
+            try:
+                user_confirm = input("Do you want to apply this shift to the XMP files? (y/n): ").strip().lower()
+                if user_confirm not in ['y', 'yes']:
+                    print("\n🛑 Execution aborted by user. No files were modified.")
                     sys.exit(0)
+            except KeyboardInterrupt:
+                print("\n\n🛑 Execution aborted via keyboard interrupt. No files were modified.")
+                sys.exit(0)
 
         # --- EXECUTE PHASE 1 (TIME) ---
         if args.dry_run:
