@@ -6,14 +6,16 @@ import sys
 import argparse
 import time
 import tempfile
-import glob
 import re
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from timezonefinder import TimezoneFinder
+from typing import Optional, List, Dict, Tuple, Set, Any
+from dataclasses import dataclass, field
+from contextlib import contextmanager
 
-# --- FORENSIC CONFIGURATION ---
+# --- CONFIGURATION ---
 EXIFTOOL_CONFIG_CONTENT = """
 %Image::ExifTool::UserDefined = (
     'Image::ExifTool::XMP::Main' => {
@@ -35,485 +37,482 @@ EXIFTOOL_CONFIG_CONTENT = """
 1;  #end
 """
 
-def create_exiftool_config():
-    try:
-        fd, path = tempfile.mkstemp(suffix='.config', text=True)
-        with os.fdopen(fd, 'w') as f:
-            f.write(EXIFTOOL_CONFIG_CONTENT)
-        return path
-    except Exception as e:
-        print(f"❌ CRITICAL ERROR: Failed to write temporary ExifTool config. {e}")
-        sys.exit(1)
+# --- DATACLASSES ---
 
-def check_dependencies():
+@dataclass
+class PhotoPair:
+    base_name: str
+    xmp_path: Optional[str] = None
+    raw_data: dict = field(default_factory=dict)
+    xmp_data: dict = field(default_factory=dict)
+
+@dataclass
+class CorrectionStrategy:
+    offset_str: str          # e.g. "+10:00"
+    drift_seconds: int       # Total shift needed (e.g. -3635)
+    timezone_name: str       # e.g. "Australia/Brisbane"
+    is_manual: bool
+    drift_distribution: List[Tuple[int, int]] = field(default_factory=list)
+    total_gps_files: int = 0
+
+@dataclass
+class PipelineStats:
+    total_images: int = 0
+    total_xmps: int = 0
+    key_frames: int = 0      # Has GPS
+    orphans: int = 0         # No GPS
+    shifted: int = 0         # Needs update
+    already_processed: int = 0 # Idempotency lock
+    perfectly_aligned: int = 0 # Time is correct, no update needed
+    missing_xmp: int = 0     # Skipped because sidecar missing
+    missing_data: int = 0    # No DateTimeOriginal in RAW
+    gpx_injected: int = 0
+
+# --- CONTEXT MANAGERS ---
+
+@contextmanager
+def temporary_argfile(lines: List[str]):
+    fd, path = tempfile.mkstemp(suffix='.txt', text=True)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            for line in lines:
+                f.write(f"{line}\n")
+        yield path
+    finally:
+        if os.path.exists(path):
+            try: os.remove(path)
+            except OSError: pass
+
+@contextmanager
+def exiftool_config():
+    fd, path = tempfile.mkstemp(suffix='.config', text=True)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(EXIFTOOL_CONFIG_CONTENT)
+        yield path
+    finally:
+        if os.path.exists(path):
+            try: os.remove(path)
+            except OSError: pass
+
+# --- UTILS ---
+
+def check_dependencies() -> None:
     try:
         subprocess.run(["exiftool", "-ver"], capture_output=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print("❌ CRITICAL ERROR: ExifTool is not installed or not in your system PATH.")
+        print("❌ CRITICAL ERROR: ExifTool is not installed or not in PATH.")
         sys.exit(1)
 
-def get_bulk_exif_data(argfile_path, config_path):
-    print("Scanning metadata (Reading RAW baselines + checking XMP states)...")
-    cmd =[
-        "exiftool", "-config", config_path, "-json", "-c", "%+.6f", "-q", "-q",
-        "-DateTimeOriginal", "-GPSDateTime",
-        "-GPSLatitude", "-GPSLongitude",
-        "-OffsetTimeOriginal",
-        "-OriginalCameraTime", # Checks the Forensic Vault
-        "-@", argfile_path
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        if result.stdout.strip():
-            return json.loads(result.stdout)
-        return[]
-    except subprocess.CalledProcessError as e:
-        print(f"❌ ERROR reading metadata: ExifTool encountered an issue.")
-        print(f"EXIFTOOL ERROR: {e.stderr.strip()}")
-        return[]
-
-def parse_offset_string_to_seconds(offset_str):
-    if not offset_str or len(offset_str) < 5:
-        return None
+def parse_offset(offset_str: Optional[str]) -> Optional[int]:
+    if not offset_str or len(offset_str) < 5: return None
     try:
         sign = 1 if offset_str[0] == '+' else -1
-        hours = int(offset_str[1:3])
-        minutes = int(offset_str[4:6] if len(offset_str) >= 6 else 0)
-        return sign * (hours * 3600 + minutes * 60)
-    except:
+        parts = offset_str[1:].replace('Z', '').split(':')
+        h, m = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+        return sign * (h * 3600 + m * 60)
+    except (ValueError, IndexError, AttributeError):
         return None
 
-def format_shift_string(total_seconds):
-    sign = "+=" if total_seconds >= 0 else "-="
-    secs = abs(int(total_seconds))
-    h = secs // 3600
-    m = (secs % 3600) // 60
-    s = secs % 60
-    return f"{sign}{h}:{m:02d}:{s:02d}"
+def format_shift(seconds: int) -> str:
+    sign = "+=" if seconds >= 0 else "-="
+    s = abs(int(seconds))
+    return f"{sign}{s // 3600}:{(s % 3600) // 60:02d}:{s % 60:02d}"
 
-def get_gps_stats(data, tf):
-    try:
-        gps_utc_str = data["GPSDateTime"].replace("Z", "").strip()[:19]
-        cam_time_str = data["DateTimeOriginal"][:19]
-
-        utc_dt = datetime.strptime(gps_utc_str, "%Y:%m:%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        cam_dt = datetime.strptime(cam_time_str, "%Y:%m:%d %H:%M:%S")
-        lat = float(data["GPSLatitude"])
-        lon = float(data["GPSLongitude"])
-        tz_name = tf.timezone_at(lat=lat, lng=lon)
-
-        if not tz_name:
-            return None, None, None
-
-        local_tz = ZoneInfo(tz_name)
-        true_local_dt = utc_dt.astimezone(local_tz)
-
-        offset_seconds = int(true_local_dt.utcoffset().total_seconds())
-        offset_hours = offset_seconds // 3600
-        offset_minutes = (abs(offset_seconds) % 3600) // 60
-        sign = "+" if offset_seconds >= 0 else "-"
-        offset_str = f"{sign}{abs(offset_hours):02d}:{offset_minutes:02d}"
-
-        true_local_dt_naive = true_local_dt.replace(tzinfo=None)
-        drift_sec = round((true_local_dt_naive - cam_dt).total_seconds())
-
-        return drift_sec, offset_str, tz_name
-    except Exception:
-        return None, None, None
-
-def format_duration(seconds):
-    if seconds < 60:
-        return f"{seconds:.2f}s"
+def format_duration(seconds: float) -> str:
+    if seconds < 60: return f"{seconds:.2f}s"
     minutes = int(seconds // 60)
-    sec = seconds % 60
-    return f"{minutes}m {sec:.2f}s"
+    return f"{minutes}m {seconds % 60:.2f}s"
+
+def decompose_drift(total_seconds: int) -> Tuple[int, int]:
+    """
+    Splits total drift into (Timezone_Jump, Actual_Drift).
+    Heuristic: Rounds to nearest 30 mins (1800s) to guess the timezone error.
+    """
+    # Round to nearest 30 minutes (1800 seconds)
+    tz_jump = round(total_seconds / 1800) * 1800
+    actual_drift = total_seconds - tz_jump
+    return tz_jump, actual_drift
+
+def format_smart_time(seconds: int) -> str:
+    sign = "+" if seconds >= 0 else "-"
+    s = abs(seconds)
+    if s >= 3600:
+        h = s // 3600
+        m = (s % 3600) // 60
+        return f"{sign}{h}h {m:02d}m"
+    elif s >= 60:
+        m = s // 60
+        sec = s % 60
+        return f"{sign}{m}m {sec:02d}s"
+    else:
+        return f"{sign}{s}s"
+
+# --- CORE LOGIC ---
+
+def scan_directory(target_dir: str) -> Tuple[List[str], Dict[str, str]]:
+    raws, xmps, seen =[], {}, set()
+    for f in sorted(os.listdir(target_dir)):
+        if f.startswith('.'): continue
+        path = os.path.join(target_dir, f)
+        base = os.path.splitext(f)[0].lower()
+        if f.lower().endswith('.xmp'):
+            xmps[base] = path
+        elif f.lower().endswith(('.cr3', '.jpg', '.dng', '.arw')) and base not in seen:
+            seen.add(base)
+            raws.append(path)
+    return raws, xmps
+
+def get_metadata(files: List[str], config: str) -> List[dict]:
+    print(f"Scanning metadata for {len(files)} files...")
+    with temporary_argfile(files) as argfile:
+        cmd =[
+            "exiftool", "-config", config, "-json", "-c", "%+.6f", "-q", "-q",
+            "-DateTimeOriginal", "-GPSDateTime", "-GPSLatitude", "-GPSLongitude",
+            "-OffsetTimeOriginal", "-OriginalCameraTime", "-@", argfile
+        ]
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            return json.loads(res.stdout) if res.stdout.strip() else[]
+        except subprocess.CalledProcessError as e:
+            print(f"❌ EXIFTOOL ERROR: {e.stderr.strip()}")
+            return[]
+
+def correlate(raw_data: List[dict], xmp_map: Dict[str, str]) -> Dict[str, PhotoPair]:
+    pairs = {}
+    for d in raw_data:
+        src = d.get("SourceFile")
+        if not src: continue
+        base = os.path.splitext(os.path.basename(src))[0].lower()
+        if base not in pairs:
+            pairs[base] = PhotoPair(base, xmp_map.get(base))
+
+        if src.lower().endswith('.xmp'): pairs[base].xmp_data = d
+        else: pairs[base].raw_data = d
+    return pairs
+
+def analyze_drift(pairs: Dict[str, PhotoPair], args: argparse.Namespace) -> CorrectionStrategy:
+    if args.target_timezone:
+        if args.current_timezone and parse_offset(args.current_timezone) is None:
+             sys.exit("❌ ERROR: Invalid --current-timezone format.")
+        return CorrectionStrategy(
+            offset_str=args.target_timezone,
+            drift_seconds=args.drift if args.drift is not None else 0,
+            timezone_name="Manual Override",
+            is_manual=True
+        )
+
+    tf = TimezoneFinder()
+    drifts, offsets = [],[]
+    consensus_tz = "Unknown"
+
+    for p in pairs.values():
+        d = p.raw_data
+        if "GPSLatitude" in d and "GPSDateTime" in d:
+            try:
+                # 1. True UTC Time from GPS
+                utc_dt = datetime.strptime(d["GPSDateTime"][:19], "%Y:%m:%d %H:%M:%S").replace(tzinfo=timezone.utc)
+
+                # 2. Camera's Naive Time
+                cam_dt = datetime.strptime(d["DateTimeOriginal"][:19], "%Y:%m:%d %H:%M:%S")
+
+                # 3. Find Target Timezone and Local Offset
+                lat, lon = float(d["GPSLatitude"]), float(d["GPSLongitude"])
+                tz_name = tf.timezone_at(lat=lat, lng=lon)
+                if not tz_name: continue
+
+                local_dt = utc_dt.astimezone(ZoneInfo(tz_name))
+                off_sec = int(local_dt.utcoffset().total_seconds()) # type: ignore
+                sign = "+" if off_sec >= 0 else "-"
+                off_str = f"{sign}{abs(off_sec)//3600:02d}:{(abs(off_sec)%3600)//60:02d}"
+
+                # 4. Determine Camera's assumed Offset
+                cam_offset_str = d.get("OffsetTimeOriginal")
+                cam_offset_sec = parse_offset(cam_offset_str)
+                if cam_offset_sec is None:
+                    # Fallback cleanly if no timezone tags exist on the photo
+                    cam_offset_sec = parse_offset(args.current_timezone) if args.current_timezone else off_sec
+
+                cam_tz = timezone(timedelta(seconds=cam_offset_sec))
+
+                # 5. Make Camera Time Aware and convert to UTC
+                cam_dt_aware = cam_dt.replace(tzinfo=cam_tz)
+
+                # 6. PURE ATOMIC DRIFT: Difference in UTC reality vs UTC assumed by camera
+                drift = round((utc_dt - cam_dt_aware).total_seconds())
+
+                drifts.append(drift)
+                offsets.append(off_str)
+                consensus_tz = tz_name
+            except (ValueError, KeyError, TypeError): continue
+
+    if not drifts:
+        sys.exit("❌ CRITICAL: No GPS data found. Use --target-timezone.")
+
+    global_offset = Counter(offsets).most_common(1)[0][0]
+    drift_counts = Counter(drifts)
+
+    # --- SMART DRIFT LOGIC (Stale GPS Filter) ---
+    max_freq = max(drift_counts.values())
+
+    # 1. Identify all drifts that are statistically significant (at least 70% of max freq)
+    # This prevents noise (1 or 2 files) from overriding the main clusters.
+    threshold = max_freq * 0.7
+    candidates =[d for d, c in drift_counts.items() if c >= threshold]
+
+    # 2. Pick the algebraically LARGEST drift (least negative).
+    # Rationale: Stale GPS timestamps are old (smaller), causing drift to be more negative.
+    # The 'freshest' GPS data will always produce the largest drift value.
+    calc_drift = max(candidates)
+
+    return CorrectionStrategy(
+        offset_str=global_offset,
+        drift_seconds=args.drift if args.drift is not None else calc_drift,
+        timezone_name=str(consensus_tz),
+        is_manual=False,
+        drift_distribution=drift_counts.most_common(10),
+        total_gps_files=len(drifts)
+    )
+
+def plan_writes(pairs: Dict[str, PhotoPair], strat: CorrectionStrategy, args: argparse.Namespace) -> Tuple[List[str], PipelineStats, Set[str], List[str]]:
+    stats = PipelineStats(total_images=len(pairs))
+    cmds, orphan_xmps, file_logs = [], set(), []
+    target_sec = parse_offset(strat.offset_str) or 0
+
+    for p in pairs.values():
+        try:
+            if not p.raw_data or "DateTimeOriginal" not in p.raw_data:
+                stats.missing_data += 1
+                file_logs.append(f"   [SKIP]  {p.base_name.ljust(15)} | Missing DateTimeOriginal in RAW")
+                continue
+
+            if not p.xmp_path:
+                stats.missing_xmp += 1
+                if "GPSLatitude" not in p.raw_data: stats.orphans += 1
+                file_logs.append(f"   [ERROR] {p.base_name.ljust(15)} | No XMP sidecar found")
+                continue
+
+            # Only count available XMPs
+            stats.total_xmps += 1
+
+            has_raw_gps = "GPSLatitude" in p.raw_data
+            if has_raw_gps: stats.key_frames += 1
+            else: stats.orphans += 1
+
+            if not has_raw_gps: orphan_xmps.add(p.xmp_path)
+
+            if any("OriginalCameraTime" in k for k in p.xmp_data.keys()):
+                stats.already_processed += 1
+                file_logs.append(f"   [LOCK]  {p.base_name.ljust(15)} | Idempotency lock active (Already processed)")
+                continue
+
+            # Math Logic
+            curr_off_str = p.raw_data.get("OffsetTimeOriginal")
+            curr_off_sec = parse_offset(curr_off_str)
+            if curr_off_sec is None:
+                curr_off_sec = parse_offset(args.current_timezone) if args.current_timezone else target_sec
+
+            tz_shift = target_sec - (curr_off_sec or 0)
+            total_shift = tz_shift + strat.drift_seconds
+
+            if total_shift == 0 and curr_off_str == strat.offset_str:
+                stats.perfectly_aligned += 1
+                file_logs.append(f"   [OK]    {p.base_name.ljust(15)} | Perfectly aligned (Offset: {curr_off_str})")
+                continue
+
+            # Build ExifTool Command
+            cmds.extend([
+                "-overwrite_original",
+                f"-OffsetTime={strat.offset_str}",
+                f"-OffsetTimeOriginal={strat.offset_str}",
+                f"-OffsetTimeDigitized={strat.offset_str}"
+            ])
+
+            src = "Camera" if has_raw_gps else ("Manual" if strat.is_manual else "Orphan")
+            cmds.append(f"-XMP-tzshifter:LocationSource={src}")
+
+            if total_shift != 0:
+                cmds.append("-XMP-tzshifter:OriginalCameraTime<DateTimeOriginal")
+                cmds.append(f"-AllDates{format_shift(total_shift)}")
+                stats.shifted += 1
+                file_logs.append(f"   [SHIFT] {p.base_name.ljust(15)} | Action: {format_shift(total_shift).ljust(12)} | New TZ: {strat.offset_str}")
+            else:
+                stats.perfectly_aligned += 1
+                file_logs.append(f"   [OK]    {p.base_name.ljust(15)} | Time aligned | New TZ: {strat.offset_str}")
+
+            cmds.append(p.xmp_path)
+            cmds.append("-execute")
+
+        except Exception as e:
+            file_logs.append(f"   [FATAL] {p.base_name.ljust(15)} | Unhandled error calculating shift: {e}")
+            print(f"❌ Error processing file {p.base_name}: {e}")
+
+    return cmds, stats, orphan_xmps, file_logs
+
+# --- UI ---
+
+def print_summary(stats: PipelineStats, times: Dict[str, float], args: argparse.Namespace):
+    print("\n==================================================")
+    print(" Pipeline Execution Summary")
+    print("==================================================")
+    print(f" Total Photos        : {stats.total_images}")
+    print(f" Total XMPs Found    : {stats.total_xmps}")
+    print("--------------------------------------------------")
+    print(" Phase 1 (Time Alignment):")
+    print(f"   ✅ Shifted         : {stats.shifted}")
+    print(f"   ✨ Already Aligned : {stats.perfectly_aligned}")
+    print(f"   🔒 Already Locked  : {stats.already_processed} (Idempotent protection)")
+    if stats.missing_xmp > 0:
+        print(f"   ❌ NO XMP SIDECAR  : {stats.missing_xmp} (SKIPPED)")
+        print("      👉 ACTION NEEDED: Select all in Lightroom -> Cmd+S")
+    if stats.missing_data > 0:
+        print(f"   ⚠️ Missing Exif    : {stats.missing_data}")
+    print("--------------------------------------------------")
+    if args.gpx:
+        print(f" Phase 2 (GPX Injection):")
+        print(f"   📍 Injected        : {stats.gpx_injected}")
+    print("--------------------------------------------------")
+    print(f" ⏱️  Dual Scan Phase   : {format_duration(times['scan'])}")
+    print(f" ⏱️  Time Batch Write  : {format_duration(times['p1'])}")
+    if args.gpx:
+        print(f" ⏱️  GPX Batch Write   : {format_duration(times['p2'])}")
+    print(f" ⏱️  Total Duration    : {format_duration(times['total'])}")
+    print("==================================================\n")
 
 def main():
     sys.stdout.reconfigure(line_buffering=True)
-    script_start_time = time.time()
+    t0 = time.time()
+    times = {'scan': 0, 'p1': 0, 'p2': 0, 'total': 0}
 
-    parser = argparse.ArgumentParser(description="Unified Idempotent Forensic Metadata Pipeline.")
-    parser.add_argument("directory", help="Path to the folder containing your CR3 and XMP files")
-    parser.add_argument("--gpx", "-g", help="Optional: Path to GPX tracklog file for Phase 2 coordinate injection")
-    parser.add_argument("--dry-run", action="store_true", help="Run the math without modifying files")
-    parser.add_argument("--no-confirm", action="store_true", help="Bypass manual verification pause for automation")
-    parser.add_argument("--target-timezone", help="Manually specify TARGET timezone offset (e.g., -08:00)")
-    parser.add_argument("--current-timezone", help="The timezone the camera clock was actually set to (e.g., +01:00)")
-    # Default is None so we can detect if user manually provided it
-    parser.add_argument("--drift", type=int, default=None, help="Manually specify atomic drift in seconds")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("directory")
+    parser.add_argument("--gpx", "-g")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--no-confirm", action="store_true")
+    parser.add_argument("--target-timezone")
+    parser.add_argument("--current-timezone")
+    parser.add_argument("--drift", type=int)
     args = parser.parse_args()
 
     check_dependencies()
-
     target_dir = os.path.abspath(args.directory)
-    if not os.path.isdir(target_dir):
-        print(f"❌ ERROR: Directory '{target_dir}' does not exist.")
-        sys.exit(1)
-
-    gpx_path = None
-    if args.gpx:
-        gpx_path = os.path.abspath(args.gpx)
-        if not os.path.isfile(gpx_path):
-            print(f"❌ CRITICAL ERROR: GPX file '{gpx_path}' does not exist.")
-            sys.exit(1)
+    if not os.path.isdir(target_dir): sys.exit("❌ Invalid Directory")
 
     print("\n==================================================")
     print(" Unified Forensic Metadata Pipeline")
     print("==================================================")
-    print(f" 📂 Target Folder : {target_dir}")
-    if gpx_path:
-        print(f" 🗺️  GPX Track     : {gpx_path}")
-    print(f" 💻 Command       : {' '.join(sys.argv)}")
+    print(f" 📂 Target : {target_dir}")
+    if args.gpx: print(f" 🗺️  GPX    : {args.gpx}")
+
+    # 1. DISCOVERY
+    files, xmp_map = scan_directory(target_dir)
+    print(f" 🔍 Inventory : {len(files)} images, {len(xmp_map)} sidecars")
     print("==================================================\n")
 
-    tf = TimezoneFinder()
-    config_path = create_exiftool_config()
+    if not files: sys.exit("❌ No image files found.")
 
-    try:
-        valid_raw_files =[]
-        xmp_map = {}
-        seen = set()
+    with exiftool_config() as cfg:
+        # 2. SCAN
+        t_scan = time.time()
+        scan_list = files + list(xmp_map.values())
+        raw_data = get_metadata(scan_list, cfg)
+        pairs = correlate(raw_data, xmp_map)
+        times['scan'] = time.time() - t_scan
 
-        for filename in sorted(os.listdir(target_dir)):
-            if filename.startswith('.'):
-                continue
+        if not pairs: sys.exit("❌ No metadata extracted.")
 
-            lower_name = filename.lower()
-            base = os.path.splitext(lower_name)[0]
-
-            if lower_name.endswith('.xmp'):
-                xmp_map[base] = os.path.join(target_dir, filename)
-            elif lower_name.endswith(('.cr3', '.jpg')):
-                if base not in seen:
-                    seen.add(base)
-                    valid_raw_files.append(os.path.join(target_dir, filename))
-
-        xmp_count = len(xmp_map)
-        if xmp_count == 0:
-            print(f"❌ CRITICAL ERROR: No .xmp sidecar files found in {target_dir}.")
-            print("Please go to Lightroom, select all photos, and press Cmd+S (Save Metadata to File) first.")
-            sys.exit(1)
-
-        if not valid_raw_files:
-            print("❌ No valid CR3 or JPG files found to read baseline data from.")
-            sys.exit(0)
-
-        # Build combined argfile to scan both RAW (for baseline) and XMP (for idempotency checks)
-        scan_files = valid_raw_files + list(xmp_map.values())
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as temp_argfile:
-            for file_path in scan_files:
-                temp_argfile.write(f"{file_path}\n")
-            argfile_path = temp_argfile.name
-
-        scan_start_time = time.time()
-        try:
-            raw_data = get_bulk_exif_data(argfile_path, config_path)
-        finally:
-            os.remove(argfile_path)
-
-        if not raw_data:
-            print("No EXIF data extracted.")
-            sys.exit(0)
-
-        # Pair RAW and XMP data in RAM
-        paired_data = {}
-        for data in raw_data:
-            path = data.get("SourceFile")
-            if not path: continue
-            base = os.path.splitext(os.path.basename(path))[0].lower()
-            ext = os.path.splitext(path)[1].lower()
-
-            if base not in paired_data:
-                paired_data[base] = {'raw': {}, 'xmp': {}}
-
-            if ext == '.xmp':
-                paired_data[base]['xmp'] = data
-            else:
-                paired_data[base]['raw'] = data
-
-        scan_duration = time.time() - scan_start_time
-
-        manual_mode = False
-        drift_distribution =[]
-        total_drifts_calculated = 0
-
-        if args.target_timezone:
-            # Manual Timezone Mode
-            global_offset = args.target_timezone
-            # Use arg drift if present, otherwise default to 0
-            global_drift = args.drift if args.drift is not None else 0
-            consensus_tz = "Manual Override"
-            manual_mode = True
-
-            if args.current_timezone and parse_offset_string_to_seconds(args.current_timezone) is None:
-                print("❌ CRITICAL ERROR: Invalid --current-timezone format.")
-                sys.exit(1)
-
-            cam_info = f" (Camera assumed at {args.current_timezone})" if args.current_timezone else ""
-            print(f"⚠️  Using MANUAL override: Target Timezone {global_offset}{cam_info}, Drift {global_drift}s")
-        else:
-            # Auto GPS Mode
-            all_drifts = []
-            all_offsets =[]
-            consensus_tz = "Unknown"
-
-            for data_pair in paired_data.values():
-                raw_info = data_pair['raw']
-                if "GPSLatitude" in raw_info and "GPSDateTime" in raw_info:
-                    drift, offset, tz = get_gps_stats(raw_info, tf)
-                    if drift is not None:
-                        all_drifts.append(drift)
-                        all_offsets.append(offset)
-                        consensus_tz = tz
-
-            if not all_drifts:
-                print("❌ CRITICAL ERROR: No photos with GPS data found. Use --target-timezone to override.")
-                sys.exit(1)
-
-            offset_counts = Counter(all_offsets)
-            global_offset = offset_counts.most_common(1)[0][0]
-            drift_counts = Counter(all_drifts)
-            max_frequency = max(drift_counts.values())
-
-            # Determine calculated drift first
-            if max_frequency >= 2:
-                most_common_drifts =[d for d, c in drift_counts.items() if c == max_frequency]
-                calculated_drift = max(most_common_drifts)
-            else:
-                calculated_drift = max(all_drifts)
-
-            # Gather stats for the UI table
-            total_drifts_calculated = len(all_drifts)
-            drift_distribution = drift_counts.most_common(10)
-
-            # --- OVERRIDE LOGIC ---
-            if args.drift is not None:
-                global_drift = args.drift
-                print(f"⚠️  Manual Drift Override Active: Using {global_drift}s instead of calculated {calculated_drift}s")
-            else:
-                global_drift = calculated_drift
-
-        target_offset_sec = parse_offset_string_to_seconds(global_offset)
+        # 3. ANALYZE
+        strat = analyze_drift(pairs, args)
 
         print("\n==================================================")
         print(" Phase 1: Master Timecode Sync Established")
         print("==================================================")
-        print(f" 📍 Target Timezone : {consensus_tz} [{global_offset}]")
-        print(f" ⏱️ Atomic Drift    : {global_drift} seconds")
+        print(f" 📍 Target Timezone : {strat.timezone_name} [{strat.offset_str}]")
 
-        # --- DRIFT DISTRIBUTION TABLE ---
-        if not manual_mode and drift_distribution:
-            print("--------------------------------------------------")
-            print(" 📊 Drift Distribution Analysis (Top 10):")
-            for drift_val, count in drift_distribution:
-                pct = (count / total_drifts_calculated) * 100
-                indicator = "⭐ (Selected)" if drift_val == global_drift else ""
-                print(f"    {drift_val:>5} seconds : {count:>4} photos ({pct:>4.1f}%) {indicator}")
-        print("==================================================")
-
-        # --- BATCH TIME ALIGNMENT PREP ---
-        stats = {"total": len(paired_data), "key_frames": 0, "orphans": 0, "shifted": 0, "tagged_only": 0, "skipped": 0, "errors": 0}
-        process_start_time = time.time()
-
-        write_instructions = []
-        orphan_xmps =[]
-
-        for base, data_pair in paired_data.items():
-            raw_info = data_pair['raw']
-            xmp_info = data_pair['xmp']
-            xmp_path = xmp_map.get(base)
-
-            if not xmp_path or not raw_info:
-                stats["skipped"] += 1
-                continue
-
-            if "DateTimeOriginal" not in raw_info:
-                stats["skipped"] += 1
-                continue
-
-            has_raw_gps = "GPSLatitude" in raw_info and "GPSDateTime" in raw_info
-
-            if has_raw_gps:
-                stats["key_frames"] += 1
-            else:
-                stats["orphans"] += 1
-
-            # --- IDEMPOTENCY LOCK ---
-            # If the XMP already contains our Forensic Vault, Phase 1 was already completed successfully.
-            is_processed = any("OriginalCameraTime" in k for k in xmp_info.keys())
-
-            if is_processed:
-                stats["skipped"] += 1
-                # Even if Phase 1 is skipped, we evaluate if Phase 2 GPX is still needed
-                has_xmp_gps = any("GPSLatitude" in k for k in xmp_info.keys())
-                if not has_raw_gps and not has_xmp_gps:
-                    orphan_xmps.append(xmp_path)
-                continue
-
-            # Queue for GPX if no GPS found natively
-            if not has_raw_gps:
-                orphan_xmps.append(xmp_path)
-
-            existing_offset_str = raw_info.get("OffsetTimeOriginal")
-            existing_offset_sec = parse_offset_string_to_seconds(existing_offset_str)
-            if existing_offset_sec is None:
-                if args.current_timezone:
-                    existing_offset_sec = parse_offset_string_to_seconds(args.current_timezone)
-                else:
-                    existing_offset_sec = target_offset_sec
-
-            tz_shift_sec = target_offset_sec - existing_offset_sec
-            total_shift_sec = tz_shift_sec + global_drift
-
-            if total_shift_sec == 0 and existing_offset_str == global_offset:
-                stats["skipped"] += 1
-                continue
-
-            shift_str = format_shift_string(total_shift_sec)
-
-            write_instructions.append("-overwrite_original")
-            write_instructions.append(f"-OffsetTime={global_offset}")
-            write_instructions.append(f"-OffsetTimeOriginal={global_offset}")
-            write_instructions.append(f"-OffsetTimeDigitized={global_offset}")
-
-            if has_raw_gps:
-                write_instructions.append("-XMP-tzshifter:LocationSource=Camera")
-            elif manual_mode:
-                write_instructions.append("-XMP-tzshifter:LocationSource=Manual")
-            else:
-                write_instructions.append("-XMP-tzshifter:LocationSource=Orphan")
-
-            if total_shift_sec != 0:
-                write_instructions.append("-XMP-tzshifter:OriginalCameraTime<DateTimeOriginal")
-                write_instructions.append(f"-AllDates{shift_str}")
-                stats["shifted"] += 1
-            else:
-                stats["tagged_only"] += 1
-
-            write_instructions.append(xmp_path)
-            write_instructions.append("-execute")
-
-        if not args.no_confirm and write_instructions:
-            print("\n⚠️  Please review the calculated timezone and drift above.")
-            print(f" Would apply Phase 1 shifts to {stats['shifted']} files.")
-            try:
-                user_confirm = input("Do you want to apply this shift to the XMP files? (y/n): ").strip().lower()
-                if user_confirm not in ['y', 'yes']:
-                    print("\n🛑 Execution aborted by user. No files were modified.")
-                    sys.exit(0)
-            except KeyboardInterrupt:
-                print("\n\n🛑 Execution aborted via keyboard interrupt. No files were modified.")
-                sys.exit(0)
-
-        # --- EXECUTE PHASE 1 (TIME) ---
-        if args.dry_run:
-            if write_instructions:
-                print(f"\n  [DRY RUN] Would apply Phase 1 shifts to {stats['shifted']} files (Skipping {stats['skipped']} already processed).")
-            else:
-                print("\n✅ Phase 1: All files are already perfectly aligned (Idempotency locked).")
-            process_duration = time.time() - process_start_time
-        elif write_instructions:
-            print(f"\n⏳ Applying timezone shifts to {stats['shifted']} XMP files...")
-            with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as write_argfile:
-                for item in write_instructions:
-                    write_argfile.write(f"{item}\n")
-                write_argfile_path = write_argfile.name
-
-            try:
-                write_cmd =["exiftool", "-config", config_path, "-@", write_argfile_path]
-                subprocess.run(write_cmd, capture_output=True, text=True)
-            finally:
-                os.remove(write_argfile_path)
-            process_duration = time.time() - process_start_time
+        # SMART DRIFT DISPLAY
+        tz_jump, actual_drift = decompose_drift(strat.drift_seconds)
+        if abs(tz_jump) > 0:
+            print(f" ⚠️  Timezone Error : {format_smart_time(tz_jump)} (Detected)")
+            print(f" ⏱️  Atomic Drift   : {format_smart_time(actual_drift)}")
         else:
-            print("\n✅ Phase 1: No time shifts needed. All files perfectly aligned or previously processed.")
-            process_duration = 0
+            print(f" ⏱️  Atomic Drift   : {format_smart_time(strat.drift_seconds)}")
 
-        # --- PHASE 2: GPX INJECTION ---
-        gpx_injected_count = 0
-        gpx_duration = 0
-
-        if gpx_path:
-            print("\n==================================================")
-            print(" Phase 2: Forensic GPX Interpolation")
-            print("==================================================")
-
-            if not orphan_xmps:
-                print("✅ No orphaned frames detected. GPX injection skipped.")
-            else:
-                with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as gpx_argfile:
-                    for orphan_xmp in set(orphan_xmps):
-                        gpx_argfile.write(f"{orphan_xmp}\n")
-                    gpx_argfile_path = gpx_argfile.name
-
-                try:
-                    gpx_cmd =[
-                        "exiftool", "-config", config_path,
-                        "-if", "not $GPSLatitude",
-                        "-api", "GeoMaxIntSecs=7200",
-                        "-geotag", gpx_path,
-                        "-Geotime<DateTimeOriginal",
-                        "-XMP-tzshifter:LocationSource=Orphan",
-                        "-overwrite_original",
-                        "-@", gpx_argfile_path
-                    ]
-
-                    if args.dry_run:
-                        print(f"  [DRY RUN] Will attempt to inject GPX into {len(set(orphan_xmps))} orphaned files.")
-                    else:
-                        print(f"⏳ Interpolating GPX data for {len(set(orphan_xmps))} orphaned frames...")
-                        gpx_start_time = time.time()
-
-                        result = subprocess.run(gpx_cmd, capture_output=True, text=True)
-
-                        updated_match = re.search(r'(\d+)\s+image files updated', result.stdout)
-                        if updated_match:
-                            gpx_injected_count = int(updated_match.group(1))
-                            print(f"✅ SUCCESS: {gpx_injected_count} orphaned files successfully geotagged.")
-                        else:
-                            print("⚠️  No orphaned files required GPX injection, or limit (GeoMaxIntSecs) exceeded.")
-
-                        gpx_duration = time.time() - gpx_start_time
-                finally:
-                    os.remove(gpx_argfile_path)
-
-        total_duration = time.time() - script_start_time
-
-        # --- SUMMARY ---
-        print("\n==================================================")
-        print(" Pipeline Execution Summary")
-        print("==================================================")
-        print(f" Total Photos Analyzed   : {stats['total']}")
-        print(f"   - Key Frames (GPS)    : {stats['key_frames']}")
-        print(f"   - Orphan Frames       : {stats['orphans']}")
-        print("--------------------------------------------------")
-        print(" Phase 1: Time Alignment (XMP)")
-        print(f"   - Time Shifted        : {stats['shifted']}")
-        print(f"   - Skipped (Perfect)   : {stats['skipped']}")
-        if gpx_path:
+        if not strat.is_manual and strat.drift_distribution:
             print("--------------------------------------------------")
-            print(" Phase 2: GPX Injection (XMP)")
-            print(f"   - Queued Orphans      : {len(set(orphan_xmps))}")
-            if not args.dry_run:
-                print(f"   - Geotagged Orphans   : {gpx_injected_count}")
-        print("--------------------------------------------------")
-        print(" Performance Metrics:")
-        print(f"   - Dual Scan Phase     : {format_duration(scan_duration)}")
-        print(f"   - Time Batch Write    : {format_duration(process_duration)}")
-        if gpx_path:
-            print(f"   - GPX Batch Write     : {format_duration(gpx_duration)}")
-        print(f"   - Total Script Time   : {format_duration(total_duration)}")
-        print("==================================================\n")
+            print(f" 📊 Drift Stats (Based on {strat.total_gps_files} GPS-tagged photos):")
+            for drift, count in strat.drift_distribution:
+                pct = (count / strat.total_gps_files) * 100
+                mark = "⭐" if drift == strat.drift_seconds else ""
 
-        if not args.dry_run:
-            print("✅ FINISHED. Return to Lightroom, select all photos, and choose 'Read Metadata from File'.\n")
+                # Format distribution lines nicely
+                d_tz, d_act = decompose_drift(drift)
+                if abs(d_tz) > 0:
+                    drift_lbl = f"{format_smart_time(d_tz)} + {format_smart_time(d_act)}"
+                else:
+                    drift_lbl = f"{format_smart_time(drift)}"
 
-    finally:
-        if os.path.exists(config_path):
+                print(f"    {drift_lbl:>16} : {count:>4} ({pct:>5.1f}%) {mark}")
+        print("==================================================")
+
+        cmds, stats, orphans, file_logs = plan_writes(pairs, strat, args)
+
+        # Print the newly generated File-by-File Log
+        print("\n==================================================")
+        print(" File-by-File Operation Log")
+        print("==================================================")
+        for log_entry in file_logs:
+            print(log_entry)
+        print("==================================================")
+
+        # 5. CONFIRM
+        if not args.no_confirm and cmds:
+            print(f"\n⚠️  Proposed Changes:")
+            print(f"   - Modify {stats.shifted} files")
+            if stats.missing_xmp > 0:
+                print(f"   - ❌ SKIP {stats.missing_xmp} files (Missing .xmp sidecars)")
             try:
-                os.remove(config_path)
-            except Exception:
-                pass
+                if input("   Proceed? (y/n): ").strip().lower() not in ['y', 'yes']: sys.exit(0)
+            except KeyboardInterrupt: sys.exit(0)
+        elif stats.missing_xmp > 0 and not cmds:
+             print(f"\n❌ Cannot proceed: {stats.missing_xmp} photos are missing XMP sidecars.")
+             print("   Please go to Lightroom -> Select All -> Metadata -> Save Metadata to File.")
+
+        # 6. EXECUTE PHASE 1
+        t_p1 = time.time()
+        if args.dry_run:
+            if cmds: print(f"\n[DRY RUN] Would update {stats.shifted} files.")
+        elif cmds:
+            print(f"\n⏳ Applying Phase 1 shifts...")
+            with temporary_argfile(cmds) as arg:
+                # -q suppresses "1 image files updated" noise
+                # stdout=subprocess.DEVNULL ensures specific suppression
+                subprocess.run(["exiftool", "-config", cfg, "-q", "-@", arg],
+                               check=True, stdout=subprocess.DEVNULL)
+        times['p1'] = time.time() - t_p1
+
+        # 7. EXECUTE PHASE 2
+        t_p2 = time.time()
+        if args.gpx and orphans:
+            valid_orphans = [o for o in orphans if o]
+            if valid_orphans:
+                print(f"\nPhase 2: Interpolating GPX for {len(valid_orphans)} orphans...")
+                with temporary_argfile(valid_orphans) as arg:
+                    cmd =["exiftool", "-config", cfg, "-if", "not $GPSLatitude",
+                           "-api", "GeoMaxIntSecs=7200", "-geotag", args.gpx,
+                           "-Geotime<DateTimeOriginal", "-XMP-tzshifter:LocationSource=Orphan",
+                           "-overwrite_original", "-@", arg]
+                    if args.dry_run:
+                        print(f"  [DRY RUN] Would inject GPX into {len(valid_orphans)} files.")
+                    else:
+                        res = subprocess.run(cmd, capture_output=True, text=True)
+                        if m := re.search(r'(\d+)\s+image', res.stdout):
+                            stats.gpx_injected = int(m.group(1))
+            else:
+                 print("\nPhase 2 Skipped: Orphan files exist but have no XMP sidecars to write to.")
+        times['p2'] = time.time() - t_p2
+
+    times['total'] = time.time() - t0
+    print_summary(stats, times, args)
 
 if __name__ == "__main__":
     main()
