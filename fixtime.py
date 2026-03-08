@@ -53,12 +53,13 @@ def check_dependencies():
         sys.exit(1)
 
 def get_bulk_exif_data(argfile_path, config_path):
-    print("Scanning pure RAW metadata (Hybrid Read Mode)...")
+    print("Scanning metadata (Reading RAW baselines + checking XMP states)...")
     cmd =[
         "exiftool", "-config", config_path, "-json", "-c", "%+.6f", "-q", "-q",
         "-DateTimeOriginal", "-GPSDateTime",
         "-GPSLatitude", "-GPSLongitude",
         "-OffsetTimeOriginal",
+        "-OriginalCameraTime", # Checks the Forensic Vault
         "-@", argfile_path
     ]
     try:
@@ -131,7 +132,7 @@ def main():
     sys.stdout.reconfigure(line_buffering=True)
     script_start_time = time.time()
 
-    parser = argparse.ArgumentParser(description="Hybrid Time Shift & GPX Injection for XMP sidecars.")
+    parser = argparse.ArgumentParser(description="Unified Idempotent Forensic Metadata Pipeline.")
     parser.add_argument("directory", help="Path to the folder containing your CR3 and XMP files")
     parser.add_argument("--gpx", "-g", help="Optional: Path to GPX tracklog file for Phase 2 coordinate injection")
     parser.add_argument("--dry-run", action="store_true", help="Run the math without modifying files")
@@ -172,7 +173,6 @@ def main():
         xmp_map = {}
         seen = set()
 
-        # --- RAM Dictionary & RAW+JPEG Deduplication ---
         for filename in sorted(os.listdir(target_dir)):
             if filename.startswith('.'):
                 continue
@@ -183,7 +183,6 @@ def main():
             if lower_name.endswith('.xmp'):
                 xmp_map[base] = os.path.join(target_dir, filename)
             elif lower_name.endswith(('.cr3', '.jpg')):
-                # Ensures we only grab the first image (CR3 before JPG) per photo
                 if base not in seen:
                     seen.add(base)
                     valid_raw_files.append(os.path.join(target_dir, filename))
@@ -194,14 +193,14 @@ def main():
             print("Please go to Lightroom, select all photos, and press Cmd+S (Save Metadata to File) first.")
             sys.exit(1)
 
-        print(f"✅ Found {xmp_count} XMP sidecars. Initializing Timezone database...")
-
         if not valid_raw_files:
             print("❌ No valid CR3 or JPG files found to read baseline data from.")
             sys.exit(0)
 
+        # Build combined argfile to scan both RAW (for baseline) and XMP (for idempotency checks)
+        scan_files = valid_raw_files + list(xmp_map.values())
         with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as temp_argfile:
-            for file_path in valid_raw_files:
+            for file_path in scan_files:
                 temp_argfile.write(f"{file_path}\n")
             argfile_path = temp_argfile.name
 
@@ -215,7 +214,22 @@ def main():
             print("No EXIF data extracted.")
             sys.exit(0)
 
-        raw_data.sort(key=lambda x: x.get("SourceFile", ""))
+        # Pair RAW and XMP data in RAM
+        paired_data = {}
+        for data in raw_data:
+            path = data.get("SourceFile")
+            if not path: continue
+            base = os.path.splitext(os.path.basename(path))[0].lower()
+            ext = os.path.splitext(path)[1].lower()
+
+            if base not in paired_data:
+                paired_data[base] = {'raw': {}, 'xmp': {}}
+
+            if ext == '.xmp':
+                paired_data[base]['xmp'] = data
+            else:
+                paired_data[base]['raw'] = data
+
         scan_duration = time.time() - scan_start_time
 
         manual_mode = False
@@ -236,9 +250,10 @@ def main():
             all_offsets =[]
             consensus_tz = "Unknown"
 
-            for data in raw_data:
-                if "GPSLatitude" in data and "GPSDateTime" in data:
-                    drift, offset, tz = get_gps_stats(data, tf)
+            for data_pair in paired_data.values():
+                raw_info = data_pair['raw']
+                if "GPSLatitude" in raw_info and "GPSDateTime" in raw_info:
+                    drift, offset, tz = get_gps_stats(raw_info, tf)
                     if drift is not None:
                         all_drifts.append(drift)
                         all_offsets.append(offset)
@@ -268,46 +283,50 @@ def main():
         print(f" ⏱️ Atomic Drift    : {global_drift} seconds")
         print("==================================================")
 
-        if not args.no_confirm:
-            print("\n⚠️  Please review the calculated timezone and drift above.")
-            try:
-                user_confirm = input("Do you want to apply this shift to the XMP files? (y/n): ").strip().lower()
-                if user_confirm not in ['y', 'yes']:
-                    print("\n🛑 Execution aborted by user. No files were modified.")
-                    sys.exit(0)
-            except KeyboardInterrupt:
-                print("\n\n🛑 Execution aborted via keyboard interrupt. No files were modified.")
-                sys.exit(0)
-
-        # --- BATCH TIME ALIGNMENT PREP ---
-        stats = {"total": len(raw_data), "key_frames": 0, "orphans": 0, "shifted": 0, "tagged_only": 0, "skipped": 0, "errors": 0}
+         # --- BATCH TIME ALIGNMENT PREP ---
+        stats = {"total": len(paired_data), "key_frames": 0, "orphans": 0, "shifted": 0, "tagged_only": 0, "skipped": 0, "errors": 0}
         process_start_time = time.time()
 
-        write_instructions =[]
+        write_instructions = []
         orphan_xmps =[]
 
-        for data in raw_data:
-            raw_path = data.get("SourceFile")
-            base_filename = os.path.splitext(os.path.basename(raw_path))[0].lower()
+        for base, data_pair in paired_data.items():
+            raw_info = data_pair['raw']
+            xmp_info = data_pair['xmp']
+            xmp_path = xmp_map.get(base)
 
-            xmp_path = xmp_map.get(base_filename)
-            if not xmp_path:
+            if not xmp_path or not raw_info:
                 stats["skipped"] += 1
                 continue
 
-            if "DateTimeOriginal" not in data:
+            if "DateTimeOriginal" not in raw_info:
                 stats["skipped"] += 1
                 continue
 
-            existing_offset_str = data.get("OffsetTimeOriginal")
-            has_gps = "GPSLatitude" in data and "GPSDateTime" in data
+            has_raw_gps = "GPSLatitude" in raw_info and "GPSDateTime" in raw_info
 
-            if has_gps:
+            if has_raw_gps:
                 stats["key_frames"] += 1
             else:
                 stats["orphans"] += 1
+
+            # --- IDEMPOTENCY LOCK ---
+            # If the XMP already contains our Forensic Vault, Phase 1 was already completed successfully.
+            is_processed = any("OriginalCameraTime" in k for k in xmp_info.keys())
+
+            if is_processed:
+                stats["skipped"] += 1
+                # Even if Phase 1 is skipped, we evaluate if Phase 2 GPX is still needed
+                has_xmp_gps = any("GPSLatitude" in k for k in xmp_info.keys())
+                if not has_raw_gps and not has_xmp_gps:
+                    orphan_xmps.append(xmp_path)
+                continue
+
+            # Queue for GPX if no GPS found natively
+            if not has_raw_gps:
                 orphan_xmps.append(xmp_path)
 
+            existing_offset_str = raw_info.get("OffsetTimeOriginal")
             existing_offset_sec = parse_offset_string_to_seconds(existing_offset_str)
             if existing_offset_sec is None:
                 if args.current_timezone:
@@ -329,7 +348,7 @@ def main():
             write_instructions.append(f"-OffsetTimeOriginal={global_offset}")
             write_instructions.append(f"-OffsetTimeDigitized={global_offset}")
 
-            if has_gps:
+            if has_raw_gps:
                 write_instructions.append("-XMP-tzshifter:LocationSource=Camera")
             elif manual_mode:
                 write_instructions.append("-XMP-tzshifter:LocationSource=Manual")
@@ -346,25 +365,41 @@ def main():
             write_instructions.append(xmp_path)
             write_instructions.append("-execute")
 
+        if not args.no_confirm:
+            if write_instructions:
+                print("\n⚠️  Please review the calculated timezone and drift above.")
+                print(f"\n Would apply Phase 1 shifts to {stats['shifted']} files.")
+                try:
+                    user_confirm = input("Do you want to apply this shift to the XMP files? (y/n): ").strip().lower()
+                    if user_confirm not in ['y', 'yes']:
+                        print("\n🛑 Execution aborted by user. No files were modified.")
+                        sys.exit(0)
+                except KeyboardInterrupt:
+                    print("\n\n🛑 Execution aborted via keyboard interrupt. No files were modified.")
+                    sys.exit(0)
+
         # --- EXECUTE PHASE 1 (TIME) ---
         if args.dry_run:
-            print("\n  [DRY RUN] Math calculated successfully. Time shifts would be applied here.")
+            if write_instructions:
+                print(f"\n  [DRY RUN] Would apply Phase 1 shifts to {stats['shifted']} files (Skipping {stats['skipped']} already processed).")
+            else:
+                print("\n✅ Phase 1: All files are already perfectly aligned (Idempotency locked).")
             process_duration = time.time() - process_start_time
         elif write_instructions:
-            print("\n⏳ Applying timezone shifts to XMP files (Batch Mode)...")
+            print(f"\n⏳ Applying timezone shifts to {stats['shifted']} XMP files...")
             with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as write_argfile:
                 for item in write_instructions:
                     write_argfile.write(f"{item}\n")
                 write_argfile_path = write_argfile.name
 
             try:
-                write_cmd = ["exiftool", "-config", config_path, "-@", write_argfile_path]
+                write_cmd =["exiftool", "-config", config_path, "-@", write_argfile_path]
                 subprocess.run(write_cmd, capture_output=True, text=True)
             finally:
                 os.remove(write_argfile_path)
             process_duration = time.time() - process_start_time
         else:
-            print("\n✅ Phase 1: No time shifts needed. All files perfectly aligned.")
+            print("\n✅ Phase 1: No time shifts needed. All files perfectly aligned or previously processed.")
             process_duration = 0
 
         # --- PHASE 2: GPX INJECTION ---
@@ -379,16 +414,15 @@ def main():
             if not orphan_xmps:
                 print("✅ No orphaned frames detected. GPX injection skipped.")
             else:
-                # --- ArgFile contains ONLY the known orphans ---
                 with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as gpx_argfile:
-                    for orphan_xmp in set(orphan_xmps): # set() ensures absolute deduplication
+                    for orphan_xmp in set(orphan_xmps):
                         gpx_argfile.write(f"{orphan_xmp}\n")
                     gpx_argfile_path = gpx_argfile.name
 
                 try:
                     gpx_cmd =[
                         "exiftool", "-config", config_path,
-                        "-if", "not $GPSLatitude", # Kept as a final safety bouncer
+                        "-if", "not $GPSLatitude",
                         "-api", "GeoMaxIntSecs=7200",
                         "-geotag", gpx_path,
                         "-Geotime<DateTimeOriginal",
@@ -398,10 +432,9 @@ def main():
                     ]
 
                     if args.dry_run:
-                        print(f"[DRY RUN] Will attempt to inject GPX into {len(orphan_xmps)} orphaned files.")
-                        print(f"  Command: {' '.join(gpx_cmd)}")
+                        print(f"  [DRY RUN] Will attempt to inject GPX into {len(set(orphan_xmps))} orphaned files.")
                     else:
-                        print(f"⏳ Interpolating GPX data for {len(orphan_xmps)} orphaned frames...")
+                        print(f"⏳ Interpolating GPX data for {len(set(orphan_xmps))} orphaned frames...")
                         gpx_start_time = time.time()
 
                         result = subprocess.run(gpx_cmd, capture_output=True, text=True)
@@ -423,25 +456,25 @@ def main():
         print("\n==================================================")
         print(" Pipeline Execution Summary")
         print("==================================================")
-        print(f" Total RAW Files Scanned : {stats['total']}")
+        print(f" Total Photos Analyzed   : {stats['total']}")
         print(f"   - Key Frames (GPS)    : {stats['key_frames']}")
         print(f"   - Orphan Frames       : {stats['orphans']}")
         print("--------------------------------------------------")
         print(" Phase 1: Time Alignment (XMP)")
         print(f"   - Time Shifted        : {stats['shifted']}")
-        print(f"   - Tagged Offset Only  : {stats['tagged_only']}")
         print(f"   - Skipped (Perfect)   : {stats['skipped']}")
-        print(f"   - Errors              : {stats['errors']}")
         if gpx_path:
             print("--------------------------------------------------")
             print(" Phase 2: GPX Injection (XMP)")
-            print(f"   - Geotagged Orphans   : {gpx_injected_count}")
+            print(f"   - Queued Orphans      : {len(set(orphan_xmps))}")
+            if not args.dry_run:
+                print(f"   - Geotagged Orphans   : {gpx_injected_count}")
         print("--------------------------------------------------")
         print(" Performance Metrics:")
-        print(f"   - RAW Scan Phase      : {format_duration(scan_duration)}")
+        print(f"   - Dual Scan Phase     : {format_duration(scan_duration)}")
         print(f"   - Time Batch Write    : {format_duration(process_duration)}")
         if gpx_path:
-            print(f"   - GPX Injection Phase : {format_duration(gpx_duration)}")
+            print(f"   - GPX Batch Write     : {format_duration(gpx_duration)}")
         print(f"   - Total Script Time   : {format_duration(total_duration)}")
         print("==================================================\n")
 
