@@ -233,6 +233,9 @@ def main():
         scan_duration = time.time() - scan_start_time
 
         manual_mode = False
+        drift_distribution =[]
+        total_drifts_calculated = 0
+
         if args.target_timezone:
             global_offset = args.target_timezone
             global_drift = args.drift
@@ -274,6 +277,10 @@ def main():
             else:
                 global_drift = max(all_drifts)
 
+            # Gather stats for the new UI table
+            total_drifts_calculated = len(all_drifts)
+            drift_distribution = drift_counts.most_common(10)
+
         target_offset_sec = parse_offset_string_to_seconds(global_offset)
 
         print("\n==================================================")
@@ -281,6 +288,15 @@ def main():
         print("==================================================")
         print(f" 📍 Target Timezone : {consensus_tz} [{global_offset}]")
         print(f" ⏱️ Atomic Drift    : {global_drift} seconds")
+
+        # --- NEW: DRIFT DISTRIBUTION TABLE ---
+        if not manual_mode and drift_distribution:
+            print("--------------------------------------------------")
+            print(" 📊 Drift Distribution Analysis (Top 10):")
+            for drift_val, count in drift_distribution:
+                pct = (count / total_drifts_calculated) * 100
+                indicator = "⭐ (Selected)" if drift_val == global_drift else ""
+                print(f"    {drift_val:>5} seconds : {count:>4} photos ({pct:>4.1f}%) {indicator}")
         print("==================================================")
 
          # --- BATCH TIME ALIGNMENT PREP ---
